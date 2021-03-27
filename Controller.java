@@ -1,9 +1,10 @@
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.io.PrintWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.ArrayList;
 
-@SuppressWarnings("InfiniteLoopStatement")
 public class Controller {
     public static void main(String[] args) {
         try {
@@ -12,6 +13,8 @@ public class Controller {
             int replicationFactor = Integer.parseInt(args[1]); // replication factor
             int timeout = Integer.parseInt(args[2]); // timeout wait time
             int rebalancePeriod = Integer.parseInt(args[3]); // rebalance wait time
+
+            ArrayList<Socket> dataStores = new ArrayList<>();
 
             try {
                 // establish controller listener
@@ -25,20 +28,24 @@ public class Controller {
 
                         // receive messages from client
                         while ((line = in.readLine()) != null) {
-                            System.out.println(line + " received");
+
+                            // establish connection to new datastore
+                            if (line.startsWith("JOIN")) {
+                                dataStores.add(new Socket("Tom-Laptop", Integer.parseInt(line.substring(5))));
+                                PrintWriter out = new PrintWriter(dataStores.get(0).getOutputStream());
+
+                                out.println("ACK");
+                                out.flush();
+                                System.out.println("ACK");
+                            }
                         }
                         clientSocket.close();
                     } catch (Exception ignored) { }
                 }
-            } catch (Exception e) {
-                System.out.println("Error: Invalid Socket!");
-            }
-        } catch (Exception e) {
-            System.out.println("Error: Invalid Arguments!");
-        }
+            } catch (Exception e) { System.out.println("Error: Invalid Socket!"); }
+        } catch (Exception e) { System.out.println("Error: Invalid Arguments!"); }
     }
 }
-
 /*
  Notes:
  1. Client is given, create controller and dstores
@@ -49,5 +56,9 @@ public class Controller {
  5. List - gets a list of all the files
  6. Storage Rebalancing - each file is stored in r dstores and files are evenly stored (when adding a new dstore and after interval)
 
- . Launch in terminal, Ctrl-C to close running program
+ 7. Each process gets logged (more info later)
+
+ 8. Launch in terminal, Ctrl-C to close running program
+ 9. java Controller.java 6400 0 0 0
+ 10. java Dstore.java 0 6400 0 0 0
  */

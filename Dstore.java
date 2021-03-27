@@ -1,4 +1,7 @@
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
 import java.io.PrintWriter;
+import java.net.ServerSocket;
 import java.net.Socket;
 
 public class Dstore {
@@ -11,24 +14,33 @@ public class Dstore {
             int fileFolder = Integer.parseInt(args[3]); // location of data store
 
             try {
+                // establish datastore listener
+                ServerSocket datastoreSocket = new ServerSocket(datastorePort);
+
                 // establish connection to controller
                 Socket socket = new Socket("Tom-Laptop", controllerPort);
                 PrintWriter out = new PrintWriter(socket.getOutputStream());
 
-                // send messages to controller
-                for(int i = 1; i < 10; i++) {
-                    Thread.sleep(1000);
+                // join controller
+                out.println("JOIN " + datastorePort);
+                out.flush();
+                System.out.println("JOIN " + datastorePort);
 
-                    out.println("TCP message " + i);
-                    out.flush();
-                    System.out.println("TCP message " + i + " sent");
+                for (;;) {
+                    try {
+                        // establish connection to client
+                        Socket clientSocket = datastoreSocket.accept();
+                        BufferedReader in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
+                        String line;
+
+                        // receive messages from client
+                        while ((line = in.readLine()) != null) {
+                            System.out.println(line + " received");
+                        }
+                        clientSocket.close();
+                    } catch (Exception ignored) { }
                 }
-            }
-            catch (Exception e) {
-                System.out.println("Error: Invalid Send!");
-            }
-        } catch (Exception e) {
-            System.out.println("Error: Invalid Arguments!");
-        }
+            } catch (Exception e) { System.out.println("Error: Invalid Socket!"); }
+        } catch (Exception e) { System.out.println("Error: Invalid Arguments!"); }
     }
 }
