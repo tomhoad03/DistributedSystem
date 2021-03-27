@@ -4,6 +4,7 @@ import java.io.PrintWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
 
+@SuppressWarnings("InfiniteLoopStatement")
 public class Dstore {
     public static int datastorePort;
     public static int controllerPort;
@@ -18,33 +19,33 @@ public class Dstore {
             timeout = Integer.parseInt(args[2]); // timeout wait time
             fileFolder = Integer.parseInt(args[3]); // location of data store
 
-            // establish datastore listener
+            // datastore socket
             ServerSocket datastoreSocket = new ServerSocket(datastorePort);
 
-            // establish connection to controller
-            DatastoreThread controllerThread = new DatastoreThread(new Socket(datastoreSocket.getInetAddress(), controllerPort));
+            // establish new connection to controller
+            DstoreThread controllerThread = new DstoreThread(new Socket(datastoreSocket.getInetAddress(), controllerPort));
             new Thread(controllerThread).start();
             controllerThread.joinController();
 
             try {
                 for (;;) {
                     try {
-                        // establish connection to client
+                        // establish new connection to client
                         final Socket clientSocket = datastoreSocket.accept();
-                        new Thread(new DatastoreThread(clientSocket)).start();
+                        new Thread(new DstoreThread(clientSocket)).start();
                     } catch (Exception ignored) { }
                 }
             } catch (Exception e) { System.out.println("Error: Invalid Socket!"); }
         } catch (Exception e) { System.out.println("Error: Invalid Arguments!"); }
     }
 
-    static class DatastoreThread implements Runnable {
+    static class DstoreThread implements Runnable {
         public final Socket socket;
         public final BufferedReader in;
         public final PrintWriter out;
         public String line;
 
-        public DatastoreThread(Socket socket) throws Exception {
+        public DstoreThread(Socket socket) throws Exception {
             this.socket = socket;
             this.in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
             this.out = new PrintWriter(socket.getOutputStream());

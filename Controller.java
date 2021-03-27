@@ -5,13 +5,18 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.ArrayList;
 
+@SuppressWarnings("InfiniteLoopStatement")
 public class Controller {
     public static int controllerPort;
     public static int replicationFactor;
     public static int timeout;
     public static int rebalancePeriod;
 
-    public static ArrayList<Socket> dataStores = new ArrayList<>(); // list of all datastore sockets
+    public static String index; // current state
+
+    public static ArrayList<ControllerThread> dataStores = new ArrayList<>(); // list of all datastore socket threads
+
+    public static ArrayList<String> acks = new ArrayList<>();
 
     public static void main(String[] args) {
         try {
@@ -26,10 +31,13 @@ public class Controller {
                 ServerSocket controllerSocket = new ServerSocket(controllerPort);
                 for (;;) {
                     try {
-                        // establish connection to new client
+                        // establish connection to new client or datastore
                         final Socket clientSocket = controllerSocket.accept();
-                        new Thread((new ControllerThread(clientSocket))).start();
-                    } catch (Exception ignored) { }
+
+                        ControllerThread controllerThread = new ControllerThread(clientSocket);
+                        new Thread((controllerThread)).start();
+                    } catch (Exception ignored) {
+                    }
                 }
             } catch (Exception e) { System.out.println("Error: Invalid Socket!"); }
         } catch (Exception e) { System.out.println("Error: Invalid Arguments!"); }
@@ -52,13 +60,48 @@ public class Controller {
             try {
                 while ((line = in.readLine()) != null) {
                     if (line.startsWith("JOIN")) { // establish connection to new datastore
-                        dataStores.add(new Socket(socket.getInetAddress(), Integer.parseInt(line.substring(5))));
-                        out.println("ACK");
-                        out.flush();
+                        dataStores.add(this);
+
+                        /* Storage Rebalancing Operation
+                        for (ControllerThread controllerThread : dataStores) {
+                            controllerThread.out.println("ACK");
+                            controllerThread.out.flush();
+                        } */
                     } else if (dataStores.size() < replicationFactor) { // disallow client connections
                         break;
                     } else if (line.startsWith("STORE")) { // store operation
-                        System.out.println("Store");
+                        String fileName = line.substring(6);
+                        index = "store in progress";
+
+                        // gets the datastore threads
+                        ArrayList<ControllerThread> portThreads = new ArrayList<>(dataStores.subList(0, rebalancePeriod));
+                        StringBuilder ports = new StringBuilder("STORE_TO");
+
+                        // gets the port of the sockets
+                        for (ControllerThread portThread : portThreads) {
+                            ports.append(" ").append(portThread.socket.getPort());
+                        }
+
+                        // return message to client
+                        out.println(ports);
+                        out.flush();
+                        System.out.println(ports);
+
+                        // waiting for acks
+                        for (;;) {
+                            try {
+                                // successful store
+                                if (acks.size() == portThreads.size()) {
+                                    index = "store complete";
+                                    acks.clear();
+
+                                    out.println("STORE_COMPLETE");
+                                    out.flush();
+                                }
+                            } catch (Exception e) {
+                                System.out.println("Error: Invalid ACKS!");
+                            }
+                        }
                     } else if (line.startsWith("LOAD")) { // load operation
                         System.out.println("Load");
                     } else if (line.startsWith("REMOVE")) { // remove operation
