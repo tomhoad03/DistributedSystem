@@ -5,45 +5,67 @@ import java.net.ServerSocket;
 import java.net.Socket;
 
 public class Dstore {
+    public static int datastorePort;
+    public static int controllerPort;
+    public static int timeout;
+    public static int fileFolder;
+
     public static void main(String[] args) {
         try {
             // reading arguments
-            int datastorePort = Integer.parseInt(args[0]); // port to listen on
-            int controllerPort = Integer.parseInt(args[1]); // controller port
-            int timeout = Integer.parseInt(args[2]); // timeout wait time
-            int fileFolder = Integer.parseInt(args[3]); // location of data store
+            datastorePort = Integer.parseInt(args[0]); // port to listen on
+            controllerPort = Integer.parseInt(args[1]); // controller port
+            timeout = Integer.parseInt(args[2]); // timeout wait time
+            fileFolder = Integer.parseInt(args[3]); // location of data store
+
+            // establish datastore listener
+            ServerSocket datastoreSocket = new ServerSocket(datastorePort);
+
+            // establish connection to controller
+            DatastoreThread controllerThread = new DatastoreThread(new Socket(datastoreSocket.getInetAddress(), controllerPort));
+            new Thread(controllerThread).start();
+            controllerThread.joinController();
 
             try {
-                // establish datastore listener
-                ServerSocket datastoreSocket = new ServerSocket(datastorePort);
-
-                // establish connection to controller
-                Socket socket = new Socket("Tom-Laptop", controllerPort);
-                PrintWriter out = new PrintWriter(socket.getOutputStream());
-
-                // join controller
-                out.println("JOIN " + datastorePort);
-                out.flush();
-
-                // test controller responses
-                out.println("LIST");
-                out.flush();
-
                 for (;;) {
                     try {
                         // establish connection to client
-                        Socket clientSocket = datastoreSocket.accept();
-                        BufferedReader in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
-                        String line;
-
-                        // receive messages from client
-                        while ((line = in.readLine()) != null) {
-                            System.out.println(line + " received");
-                        }
-                        clientSocket.close();
+                        final Socket clientSocket = datastoreSocket.accept();
+                        new Thread(new DatastoreThread(clientSocket)).start();
                     } catch (Exception ignored) { }
                 }
             } catch (Exception e) { System.out.println("Error: Invalid Socket!"); }
         } catch (Exception e) { System.out.println("Error: Invalid Arguments!"); }
+    }
+
+    static class DatastoreThread implements Runnable {
+        public final Socket socket;
+        public final BufferedReader in;
+        public final PrintWriter out;
+        public String line;
+
+        public DatastoreThread(Socket socket) throws Exception {
+            this.socket = socket;
+            this.in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+            this.out = new PrintWriter(socket.getOutputStream());
+        }
+
+        // basic listener
+        public void run() {
+            try {
+                while ((line = in.readLine()) != null) {
+                    System.out.println(line);
+                }
+                socket.close();
+            } catch (Exception e) {
+                System.out.println("Error: Invalid Thread!");
+            }
+        }
+
+        // establish connection to controller
+        public void joinController() {
+            out.println("JOIN " + socket.getPort());
+            out.flush();
+        }
     }
 }

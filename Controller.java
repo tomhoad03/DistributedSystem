@@ -6,56 +6,72 @@ import java.net.Socket;
 import java.util.ArrayList;
 
 public class Controller {
+    public static int controllerPort;
+    public static int replicationFactor;
+    public static int timeout;
+    public static int rebalancePeriod;
+
+    public static ArrayList<Socket> dataStores = new ArrayList<>(); // list of all datastore sockets
+
     public static void main(String[] args) {
         try {
             // reading arguments
-            int controllerPort = Integer.parseInt(args[0]);  // port to listen on
-            int replicationFactor = Integer.parseInt(args[1]); // replication factor
-            int timeout = Integer.parseInt(args[2]); // timeout wait time
-            int rebalancePeriod = Integer.parseInt(args[3]); // rebalance wait time
-
-            ArrayList<Socket> dataStores = new ArrayList<>(); // list of all datastore sockets
+            controllerPort = Integer.parseInt(args[0]);  // port to listen on
+            replicationFactor = Integer.parseInt(args[1]); // replication factor
+            timeout = Integer.parseInt(args[2]); // timeout wait time
+            rebalancePeriod = Integer.parseInt(args[3]); // rebalance wait time
 
             try {
                 // establish controller listener
                 ServerSocket controllerSocket = new ServerSocket(controllerPort);
                 for (;;) {
                     try {
-                        // establish connection to client
+                        // establish connection to new client
                         final Socket clientSocket = controllerSocket.accept();
-
-                        // multithreading
-                        new Thread(() -> {
-                            try {
-                                BufferedReader in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
-                                PrintWriter out = new PrintWriter(clientSocket.getOutputStream());
-                                String line;
-
-                                // receive messages from client / datastores
-                                while ((line = in.readLine()) != null) {
-                                    if (line.startsWith("JOIN")) { // establish connection to new datastore
-                                        dataStores.add(new Socket(clientSocket.getInetAddress(), Integer.parseInt(line.substring(5))));
-                                    } else if (dataStores.size() < replicationFactor) { // disallow client connections
-                                        break;
-                                    } else if (line.startsWith("STORE")) { // store operation
-                                        System.out.println("Store");
-                                    } else if (line.startsWith("LOAD")) { // load operation
-                                        System.out.println("Load");
-                                    } else if (line.startsWith("REMOVE")) { // remove operation
-                                        System.out.println("Remove");
-                                    } else if (line.startsWith("LIST")) { // list operation
-                                        System.out.println("List");
-                                    }
-                                }
-                                clientSocket.close();
-                            } catch (Exception e) {
-                                System.out.println("Error: Invalid Thread!");
-                            }
-                        }).start();
+                        new Thread((new ControllerThread(clientSocket))).start();
                     } catch (Exception ignored) { }
                 }
             } catch (Exception e) { System.out.println("Error: Invalid Socket!"); }
         } catch (Exception e) { System.out.println("Error: Invalid Arguments!"); }
+    }
+
+    static class ControllerThread implements Runnable {
+        public final Socket socket;
+        public final BufferedReader in;
+        public final PrintWriter out;
+        public String line;
+
+        public ControllerThread(Socket socket) throws Exception {
+            this.socket = socket;
+            this.in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+            this.out = new PrintWriter(socket.getOutputStream());
+        }
+
+        // controller listener
+        public void run() {
+            try {
+                while ((line = in.readLine()) != null) {
+                    if (line.startsWith("JOIN")) { // establish connection to new datastore
+                        dataStores.add(new Socket(socket.getInetAddress(), Integer.parseInt(line.substring(5))));
+                        out.println("ACK");
+                        out.flush();
+                    } else if (dataStores.size() < replicationFactor) { // disallow client connections
+                        break;
+                    } else if (line.startsWith("STORE")) { // store operation
+                        System.out.println("Store");
+                    } else if (line.startsWith("LOAD")) { // load operation
+                        System.out.println("Load");
+                    } else if (line.startsWith("REMOVE")) { // remove operation
+                        System.out.println("Remove");
+                    } else if (line.startsWith("LIST")) { // list operation
+                        System.out.println("List");
+                    }
+                }
+                socket.close();
+            } catch (Exception e) {
+                System.out.println("Error: Invalid Thread!");
+            }
+        }
     }
 }
 /*
