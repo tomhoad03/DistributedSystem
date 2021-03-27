@@ -24,7 +24,10 @@ public class Dstore {
                 // join controller
                 out.println("JOIN " + datastorePort);
                 out.flush();
-                System.out.println("JOIN " + datastorePort);
+
+                // test controller responses
+                out.println("LIST");
+                out.flush();
 
                 for (;;) {
                     try {

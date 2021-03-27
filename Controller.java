@@ -14,7 +14,7 @@ public class Controller {
             int timeout = Integer.parseInt(args[2]); // timeout wait time
             int rebalancePeriod = Integer.parseInt(args[3]); // rebalance wait time
 
-            ArrayList<Socket> dataStores = new ArrayList<>();
+            ArrayList<Socket> dataStores = new ArrayList<>(); // list of all datastore sockets
 
             try {
                 // establish controller listener
@@ -22,24 +22,36 @@ public class Controller {
                 for (;;) {
                     try {
                         // establish connection to client
-                        Socket clientSocket = controllerSocket.accept();
-                        BufferedReader in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
-                        String line;
+                        final Socket clientSocket = controllerSocket.accept();
 
-                        // receive messages from client
-                        while ((line = in.readLine()) != null) {
+                        // multithreading
+                        new Thread(() -> {
+                            try {
+                                BufferedReader in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
+                                PrintWriter out = new PrintWriter(clientSocket.getOutputStream());
+                                String line;
 
-                            // establish connection to new datastore
-                            if (line.startsWith("JOIN")) {
-                                dataStores.add(new Socket("Tom-Laptop", Integer.parseInt(line.substring(5))));
-                                PrintWriter out = new PrintWriter(dataStores.get(0).getOutputStream());
-
-                                out.println("ACK");
-                                out.flush();
-                                System.out.println("ACK");
+                                // receive messages from client / datastores
+                                while ((line = in.readLine()) != null) {
+                                    if (line.startsWith("JOIN")) { // establish connection to new datastore
+                                        dataStores.add(new Socket(clientSocket.getInetAddress(), Integer.parseInt(line.substring(5))));
+                                    } else if (dataStores.size() < replicationFactor) { // disallow client connections
+                                        break;
+                                    } else if (line.startsWith("STORE")) { // store operation
+                                        System.out.println("Store");
+                                    } else if (line.startsWith("LOAD")) { // load operation
+                                        System.out.println("Load");
+                                    } else if (line.startsWith("REMOVE")) { // remove operation
+                                        System.out.println("Remove");
+                                    } else if (line.startsWith("LIST")) { // list operation
+                                        System.out.println("List");
+                                    }
+                                }
+                                clientSocket.close();
+                            } catch (Exception e) {
+                                System.out.println("Error: Invalid Thread!");
                             }
-                        }
-                        clientSocket.close();
+                        }).start();
                     } catch (Exception ignored) { }
                 }
             } catch (Exception e) { System.out.println("Error: Invalid Socket!"); }
@@ -58,7 +70,7 @@ public class Controller {
 
  7. Each process gets logged (more info later)
 
- 8. Launch in terminal, Ctrl-C to close running program
- 9. java Controller.java 6400 0 0 0
- 10. java Dstore.java 0 6400 0 0 0
+ 8. Launch in terminal, Ctrl-C to close running program, remove .java with class files
+ 9. java Controller.java 6400 1 0 0
+ 10. java Dstore.java 6401 6400 0 0
  */
