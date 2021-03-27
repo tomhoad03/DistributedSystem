@@ -14,9 +14,10 @@ public class Controller {
 
     public static String index; // current state
 
-    public static ArrayList<ControllerThread> dataStores = new ArrayList<>(); // list of all datastore socket threads
+    public static ArrayList<Integer> dataStores = new ArrayList<>(); // list of all datastore socket threads
 
     public static ArrayList<String> acks = new ArrayList<>();
+    public static String fileName;
 
     public static void main(String[] args) {
         try {
@@ -36,8 +37,7 @@ public class Controller {
 
                         ControllerThread controllerThread = new ControllerThread(clientSocket);
                         new Thread((controllerThread)).start();
-                    } catch (Exception ignored) {
-                    }
+                    } catch (Exception ignored) { }
                 }
             } catch (Exception e) { System.out.println("Error: Invalid Socket!"); }
         } catch (Exception e) { System.out.println("Error: Invalid Arguments!"); }
@@ -59,31 +59,26 @@ public class Controller {
         public void run() {
             try {
                 while ((line = in.readLine()) != null) {
-                    if (line.startsWith("JOIN")) { // establish connection to new datastore
-                        dataStores.add(this);
-
-                        /* Storage Rebalancing Operation
-                        for (ControllerThread controllerThread : dataStores) {
-                            controllerThread.out.println("ACK");
-                            controllerThread.out.flush();
-                        } */
+                    if (line.startsWith("JOIN ")) { // establish connection to new datastore
+                        dataStores.add(Integer.valueOf(line.split(" ")[1]));
                     } else if (dataStores.size() < replicationFactor) { // disallow client connections
                         break;
-                    } else if (line.startsWith("STORE")) { // store operation
-                        String fileName = line.substring(6);
+                    } else if (line.startsWith("STORE ")) { // store operation
+                        fileName = line.split(" ")[1];
                         index = "store in progress";
 
                         // gets the datastore threads
-                        ArrayList<ControllerThread> portThreads = new ArrayList<>(dataStores.subList(0, rebalancePeriod));
+                        ArrayList<Integer> portThreads = new ArrayList<>(dataStores.subList(0, replicationFactor));
                         StringBuilder ports = new StringBuilder("STORE_TO");
 
                         // gets the port of the sockets
-                        for (ControllerThread portThread : portThreads) {
-                            ports.append(" ").append(portThread.socket.getPort());
+                        for (Integer portThread : portThreads) {
+                            ports.append(" ").append(portThread);
                         }
 
                         // return message to client
-                        out.println(ports);
+                        String portsString = ports.toString();
+                        out.println(portsString);
                         out.flush();
                         System.out.println(ports);
 
@@ -97,17 +92,26 @@ public class Controller {
 
                                     out.println("STORE_COMPLETE");
                                     out.flush();
+                                    System.out.println("Store complete!");
                                 }
                             } catch (Exception e) {
                                 System.out.println("Error: Invalid ACKS!");
                             }
                         }
-                    } else if (line.startsWith("LOAD")) { // load operation
+                    } else if (line.startsWith("STORE_ACK ")) { // receive ack from dstore operation
+                        String ackName = line.split(" ")[1];
+                        if (ackName.equals(fileName)) {
+                            acks.add("ACK");
+                            break;
+                        }
+                    } else if (line.startsWith("LOAD" )) { // load operation
                         System.out.println("Load");
-                    } else if (line.startsWith("REMOVE")) { // remove operation
+                    } else if (line.startsWith("REMOVE ")) { // remove operation
                         System.out.println("Remove");
-                    } else if (line.startsWith("LIST")) { // list operation
+                    } else if (line.startsWith("LIST ")) { // list operation
                         System.out.println("List");
+                    } else {
+                        System.out.println("Unknown command!");
                     }
                 }
                 socket.close();

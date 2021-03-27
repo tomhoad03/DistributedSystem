@@ -11,6 +11,8 @@ public class Dstore {
     public static int timeout;
     public static int fileFolder;
 
+    public static DstoreThread dstoreThread;
+
     public static void main(String[] args) {
         try {
             // reading arguments
@@ -23,9 +25,9 @@ public class Dstore {
             ServerSocket datastoreSocket = new ServerSocket(datastorePort);
 
             // establish new connection to controller
-            DstoreThread controllerThread = new DstoreThread(new Socket(datastoreSocket.getInetAddress(), controllerPort));
-            new Thread(controllerThread).start();
-            controllerThread.joinController();
+            dstoreThread = new DstoreThread(new Socket(datastoreSocket.getInetAddress(), controllerPort));
+            new Thread(dstoreThread).start();
+            dstoreThread.joinController();
 
             try {
                 for (;;) {
@@ -55,7 +57,32 @@ public class Dstore {
         public void run() {
             try {
                 while ((line = in.readLine()) != null) {
-                    System.out.println(line);
+                    if (line.startsWith("STORE ")) { // store operation
+                        String filename = line.split(" ")[1];
+                        String filesize = line.split(" ")[2];
+
+                        // send ack to client
+                        out.println("ACK");
+                        out.flush();
+
+                        // get file contents from client
+                        for (;;) {
+                            try {
+                                while ((line = in.readLine()) != null) {
+                                    String fileContents = line;
+
+                                    // store contents of file
+
+                                    // sends ack to controller
+                                    dstoreThread.out.println("STORE_ACK " + filename);
+                                    dstoreThread.out.flush();
+                                    break;
+                                }
+                            } catch (Exception e) {
+                                System.out.println("Error: Invalid ACK Send!");
+                            }
+                        }
+                    }
                 }
                 socket.close();
             } catch (Exception e) {
@@ -65,7 +92,7 @@ public class Dstore {
 
         // establish connection to controller
         public void joinController() {
-            out.println("JOIN " + socket.getPort());
+            out.println("JOIN " + datastorePort);
             out.flush();
         }
     }
