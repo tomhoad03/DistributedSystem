@@ -1,10 +1,11 @@
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
+import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 
-@SuppressWarnings("InfiniteLoopStatement")
+@SuppressWarnings({"InfiniteLoopStatement"})
 public class Dstore {
     public static int datastorePort;
     public static int controllerPort;
@@ -25,68 +26,54 @@ public class Dstore {
             ServerSocket datastoreSocket = new ServerSocket(datastorePort);
 
             // establish new connection to controller
-            dstoreThread = new DstoreThread(new Socket(datastoreSocket.getInetAddress(), controllerPort));
+            dstoreThread = new DstoreThread(new Socket(InetAddress.getLocalHost(), controllerPort));
             new Thread(dstoreThread).start();
             dstoreThread.joinController();
 
-            try {
-                for (;;) {
-                    try {
-                        // establish new connection to client
-                        final Socket clientSocket = datastoreSocket.accept();
-                        new Thread(new DstoreThread(clientSocket)).start();
-                    } catch (Exception ignored) { }
-                }
-            } catch (Exception e) { System.out.println("Error: Invalid Socket!"); }
-        } catch (Exception e) { System.out.println("Error: Invalid Arguments!"); }
+            for (;;) {
+                try {
+                    // establish new connection to client
+                    final Socket clientSocket = datastoreSocket.accept();
+                    new Thread(new DstoreThread(clientSocket)).start();
+                } catch (Exception ignored) { }
+            }
+        } catch (Exception e) { System.out.println("Error: " + e); }
     }
 
     static class DstoreThread implements Runnable {
-        public final Socket socket;
-        public final BufferedReader in;
-        public final PrintWriter out;
-        public String line;
+        private final Socket socket;
+        private final BufferedReader in;
+        private final PrintWriter out;
 
         public DstoreThread(Socket socket) throws Exception {
             this.socket = socket;
             this.in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-            this.out = new PrintWriter(socket.getOutputStream());
+            this.out = new PrintWriter(socket.getOutputStream(), true);
         }
 
         // basic listener
         public void run() {
             try {
+                String line;
                 while ((line = in.readLine()) != null) {
                     if (line.startsWith("STORE ")) { // store operation
                         String filename = line.split(" ")[1];
                         String filesize = line.split(" ")[2];
 
-                        // send ack to client
-                        out.println("ACK");
-                        out.flush();
+                        // send ack to client and get file contents
+                        String fileContents = sendMsgReceiveMsg("ACK");
 
-                        // get file contents from client
-                        for (;;) {
-                            try {
-                                while ((line = in.readLine()) != null) {
-                                    String fileContents = line;
+                        // store file contents
+                        System.out.println(fileContents);
 
-                                    // store contents of file
-
-                                    // sends ack to controller
-                                    dstoreThread.out.println("STORE_ACK " + filename);
-                                    dstoreThread.out.flush();
-                                    break;
-                                }
-                            } catch (Exception e) {
-                                System.out.println("Error: Invalid ACK Send!");
-                            }
-                        }
+                        // send ack to controller
+                        dstoreThread.sendMsg("STORE_ACK " + filename);
+                        break;
                     }
                 }
                 socket.close();
             } catch (Exception e) {
-                System.out.println("Error: Invalid Thread!");
+                System.out.println("Error: " + e);
             }
         }
 
@@ -94,6 +81,15 @@ public class Dstore {
         public void joinController() {
             out.println("JOIN " + datastorePort);
             out.flush();
+        }
+
+        public void sendMsg(String msg) {
+            out.println(msg);
+        }
+
+        public String sendMsgReceiveMsg(String msg) throws Exception {
+            out.println(msg);
+            return in.readLine();
         }
     }
 }
