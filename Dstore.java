@@ -4,6 +4,7 @@ import java.io.PrintWriter;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.ArrayList;
 
 @SuppressWarnings({"InfiniteLoopStatement"})
 public class Dstore {
@@ -12,7 +13,9 @@ public class Dstore {
     public static int timeout;
     public static int fileFolder;
 
-    public static DstoreThread dstoreThread;
+    public static DatastoreThread datastoreThread; // controller connection
+
+    public static ArrayList<DatastoreFile> datastoreFiles = new ArrayList<>();; // list of files in datastore
 
     public static void main(String[] args) {
         try {
@@ -26,26 +29,26 @@ public class Dstore {
             ServerSocket datastoreSocket = new ServerSocket(datastorePort);
 
             // establish new connection to controller
-            dstoreThread = new DstoreThread(new Socket(InetAddress.getLocalHost(), controllerPort));
-            new Thread(dstoreThread).start();
-            dstoreThread.joinController();
+            datastoreThread = new DatastoreThread(new Socket(InetAddress.getLocalHost(), controllerPort));
+            new Thread(datastoreThread).start();
+            datastoreThread.joinController();
 
             for (;;) {
                 try {
                     // establish new connection to client
                     final Socket clientSocket = datastoreSocket.accept();
-                    new Thread(new DstoreThread(clientSocket)).start();
+                    new Thread(new DatastoreThread(clientSocket)).start();
                 } catch (Exception ignored) { }
             }
         } catch (Exception e) { System.out.println("Error: " + e); }
     }
 
-    static class DstoreThread implements Runnable {
+    static class DatastoreThread implements Runnable {
         private final Socket socket;
         private final BufferedReader in;
         private final PrintWriter out;
 
-        public DstoreThread(Socket socket) throws Exception {
+        public DatastoreThread(Socket socket) throws Exception {
             this.socket = socket;
             this.in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
             this.out = new PrintWriter(socket.getOutputStream(), true);
@@ -57,21 +60,32 @@ public class Dstore {
                 String line;
                 while ((line = in.readLine()) != null) {
                     if (line.startsWith("STORE ")) { // store operation
-                        String filename = line.split(" ")[1];
-                        String filesize = line.split(" ")[2];
+                        String fileName = line.split(" ")[1];
+                        String fileSize = line.split(" ")[2];
 
                         // send ack to client and get file contents
                         String fileContents = sendMsgReceiveMsg("ACK");
 
                         // store file contents
                         System.out.println(fileContents);
+                        datastoreFiles.add(new DatastoreFile(fileName, fileSize, fileContents));
 
                         // send ack to controller
-                        dstoreThread.sendMsg("STORE_ACK " + filename);
-                        break;
+                        datastoreThread.sendMsg("STORE_ACK " + fileName);
+                        stop();
+
+                    } else if (line.startsWith("LOAD_DATA ")) {
+                        String fileName = line.split(" ")[1];
+
+                        // gets the file from the datastore folder
+                        for (DatastoreFile datastoreFile : datastoreFiles) {
+                            if (datastoreFile.getFileName().equals(fileName)) {
+                                sendMsg(datastoreFile.getFileContents());
+                            }
+                        }
+                        stop();
                     }
                 }
-                socket.close();
             } catch (Exception e) {
                 System.out.println("Error: " + e);
             }
@@ -81,6 +95,13 @@ public class Dstore {
         public void joinController() {
             out.println("JOIN " + datastorePort);
             out.flush();
+        }
+
+        // closes the current socket
+        public void stop() throws Exception {
+            in.close();
+            out.close();
+            socket.close();
         }
 
         public void sendMsg(String msg) {

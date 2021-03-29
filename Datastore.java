@@ -1,11 +1,11 @@
 import java.util.ArrayList;
 
-public class DstoreIndex {
+public class Datastore {
     private int port;
     private String index;
     private ArrayList<String> fileNames;
 
-    public DstoreIndex(String port, String index) {
+    public Datastore(String port, String index) {
         this.port = Integer.parseInt(port);
         this.index = index;
         this.fileNames = new ArrayList<>();

@@ -12,11 +12,12 @@ public class Controller {
     public static int timeout;
     public static int rebalancePeriod;
 
-    public static ArrayList<DstoreIndex> dataStores = new ArrayList<>(); // list of all datastores
-    public static ArrayList<String> fileNames = new ArrayList<>(); // list of all the files stored
+    public static ArrayList<Datastore> dataStores = new ArrayList<>(); // list of all datastores
+    public static ArrayList<String> acks = new ArrayList<>(); // list of all the acks received in the current operation
 
-    public static ArrayList<String> acks = new ArrayList<>();
+    public static ArrayList<DatastoreFile> controllerFiles = new ArrayList<>(); // list of all the files stored
     public static String fileName;
+    public static String fileSize;
 
     public static void main(String[] args) {
         try {
@@ -35,6 +36,8 @@ public class Controller {
 
                     ControllerThread controllerThread = new ControllerThread(clientSocket);
                     new Thread((controllerThread)).start();
+
+                    Thread.sleep(100);
                 } catch (Exception ignored) { }
             }
         } catch (Exception e) { System.out.println("Error: " + e); }
@@ -57,8 +60,7 @@ public class Controller {
                 String line;
                 while ((line = in.readLine()) != null) {
                     if (line.startsWith("JOIN ")) { // establish connection to new datastore
-                        dataStores.add(new DstoreIndex(line.split(" ")[1], "available"));
-                        System.out.println("new datastore connected");
+                        dataStores.add(new Datastore(line.split(" ")[1], "available"));
 
                     } else if (dataStores.size() < replicationFactor) { // disallow client connections
                         throw new Exception("Not enough datastores connected!");
@@ -67,18 +69,19 @@ public class Controller {
                         fileName = line.split(" ")[1];
 
                         // checks if the file is already stored
-                        if (fileNames.contains(fileName)) {
+                        if (indexContains(fileName)) {
+                            sendMsg("ERROR ALREADY_EXISTS " + fileName);
                             throw new Exception("File already in datastores!");
                         }
                         StringBuilder ports = new StringBuilder("STORE_TO");
 
                         // gets the datastore ports
                         for (int i = 0; i < replicationFactor; i++) {
-                            DstoreIndex dstore = dataStores.get(i);
+                            Datastore datastore = dataStores.get(i);
 
-                            if (dstore.getIndex().equals("available")) {
-                                ports.append(" ").append(dstore.getPort());
-                                dstore.setIndex("store in progress");
+                            if (datastore.getIndex().equals("available")) {
+                                ports.append(" ").append(datastore.getPort());
+                                datastore.setIndex("store in progress");
                             } else {
                                 throw new Exception("Datastores unavailable!");
                             }
@@ -91,7 +94,6 @@ public class Controller {
                             if (acks.size() == replicationFactor) {
                                 out.println("STORE_COMPLETE");
                                 out.flush();
-                                System.out.println("store complete");
                                 break;
                             }
                             Thread.sleep(100);
@@ -99,16 +101,15 @@ public class Controller {
 
                         // update the index for each datastore
                         for (int i = 0; i < replicationFactor; i++) {
-                            DstoreIndex dstore = dataStores.get(i);
+                            Datastore datastore = dataStores.get(i);
 
-                            dstore.addFileName(fileName);
-                            dstore.setIndex("available");
+                            datastore.addFileName(fileName);
+                            datastore.setIndex("available");
                         }
 
                         // ends the operation
                         acks.clear();
-                        fileNames.add(fileName);
-                        System.out.println("available");
+                        controllerFiles.add(new DatastoreFile(fileName, fileSize));
 
                     } else if (line.startsWith("STORE_ACK ")) { // receive ack from dstore operation
                         String ackName = line.split(" ")[1];
@@ -117,7 +118,20 @@ public class Controller {
                         }
 
                     } else if (line.startsWith("LOAD" )) { // load operation
-                        System.out.println("Load");
+                        fileName = line.split(" ")[1];
+
+                        // checks if the file exists
+                        if (!indexContains(fileName)) {
+                            sendMsg("ERROR DOES_NOT EXIST");
+                            throw new Exception("File does not exist!");
+                        }
+
+                        // gets a datastore that contains the file
+                        for (Datastore datastore : dataStores) {
+                            if (datastore.getFileNames().contains(fileName)) {
+                                sendMsg("LOAD_FROM " + datastore.getPort() + " 6.4mb");
+                            }
+                        }
 
                     } else if (line.startsWith("REMOVE ")) { // remove operation
                         System.out.println("Remove");
@@ -130,6 +144,16 @@ public class Controller {
             } catch (Exception e) {
                 System.out.println("Error: " + e);
             }
+        }
+
+        // checks if a file is in the index
+        public boolean indexContains(String fileName) {
+            for (DatastoreFile datastoreFile : controllerFiles) {
+                if (datastoreFile.getFileName().equals(fileName)) {
+                    return true;
+                }
+            }
+            return false;
         }
 
         public void sendMsg(String msg) {
