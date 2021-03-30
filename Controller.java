@@ -5,7 +5,7 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.ArrayList;
 
-@SuppressWarnings({"InfiniteLoopStatement", "BusyWait"})
+@SuppressWarnings({"InfiniteLoopStatement", "BusyWait", "SuspiciousMethodCalls"})
 public class Controller {
     public static int controllerPort;
     public static int replicationFactor;
@@ -18,6 +18,7 @@ public class Controller {
     public static ArrayList<DatastoreFile> controllerFiles = new ArrayList<>(); // list of all the files stored
     public static String fileName;
     public static String fileSize;
+    public static int endpointIndex;
 
     public static void main(String[] args) {
         try {
@@ -60,89 +61,166 @@ public class Controller {
                 String line;
                 while ((line = in.readLine()) != null) {
                     if (line.startsWith("JOIN ")) { // establish connection to new datastore
-                        dataStores.add(new Datastore(line.split(" ")[1], "available"));
+                        dataStores.add(new Datastore(line.split(" ")[1], "available", this));
+                        stop();
 
                     } else if (dataStores.size() < replicationFactor) { // disallow client connections
                         throw new Exception("Not enough datastores connected!");
 
                     } else if (line.startsWith("STORE ")) { // store operation
                         fileName = line.split(" ")[1];
+                        storeOp();
 
-                        // checks if the file is already stored
-                        if (indexContains(fileName)) {
-                            sendMsg("ERROR ALREADY_EXISTS " + fileName);
-                            throw new Exception("File already in datastores!");
-                        }
-                        StringBuilder ports = new StringBuilder("STORE_TO");
-
-                        // gets the datastore ports
-                        for (int i = 0; i < replicationFactor; i++) {
-                            Datastore datastore = dataStores.get(i);
-
-                            if (datastore.getIndex().equals("available")) {
-                                ports.append(" ").append(datastore.getPort());
-                                datastore.setIndex("store in progress");
-                            } else {
-                                throw new Exception("Datastores unavailable!");
-                            }
-                        }
-                        sendMsg(ports.toString());
-
-                        // waiting for acks
-                        for (;;) {
-                            // successful store
-                            if (acks.size() == replicationFactor) {
-                                out.println("STORE_COMPLETE");
-                                out.flush();
-                                break;
-                            }
-                            Thread.sleep(100);
-                        }
-
-                        // update the index for each datastore
-                        for (int i = 0; i < replicationFactor; i++) {
-                            Datastore datastore = dataStores.get(i);
-
-                            datastore.addFileName(fileName);
-                            datastore.setIndex("available");
-                        }
-
-                        // ends the operation
-                        acks.clear();
-                        controllerFiles.add(new DatastoreFile(fileName, fileSize));
-
-                    } else if (line.startsWith("STORE_ACK ")) { // receive ack from dstore operation
+                    } else if (line.startsWith("STORE_ACK ")) { // receive store ack from dstore operation
                         String ackName = line.split(" ")[1];
                         if (ackName.equals(fileName)) {
                             acks.add("ACK");
                         }
 
-                    } else if (line.startsWith("LOAD" )) { // load operation
+                    } else if (line.startsWith("LOAD ")) { // load operation
                         fileName = line.split(" ")[1];
+                        endpointIndex = 0;
+                        loadOp();
 
-                        // checks if the file exists
-                        if (!indexContains(fileName)) {
-                            sendMsg("ERROR DOES_NOT EXIST");
-                            throw new Exception("File does not exist!");
-                        }
-
-                        // gets a datastore that contains the file
-                        for (Datastore datastore : dataStores) {
-                            if (datastore.getFileNames().contains(fileName)) {
-                                sendMsg("LOAD_FROM " + datastore.getPort() + " 6.4mb");
-                            }
-                        }
+                    } else if (line.startsWith("RELOAD ")) {
+                        fileName = line.split(" ")[1];
+                        loadOp();
 
                     } else if (line.startsWith("REMOVE ")) { // remove operation
-                        System.out.println("Remove");
+                        fileName = line.split(" ")[1];
+                        removeOp();
+
+                    } else if (line.startsWith("REMOVE_ACK ")) { // receive remove ack from dstore operation
+                        String ackName = line.split(" ")[1];
+                        if (ackName.equals(fileName)) {
+                            acks.add("ACK");
+                        } else if (ackName.equals("DOES_NOT_EXIST")) {
+                            acks.add("ACK");
+                            throw new Exception("File does not exist in datastore!");
+                        }
 
                     } else if (line.startsWith("LIST ")) { // list operation
-                        System.out.println("List");
+                        StringBuilder files = new StringBuilder();
+
+                        // gets the list of files
+                        for (DatastoreFile controllerFile : controllerFiles) {
+                            if (!(files.length() == 0)) {
+                                files.append(" ");
+                            }
+                            files.append(controllerFile);
+                        }
+                        sendMsg(files.toString());
                     }
                 }
                 socket.close();
             } catch (Exception e) {
                 System.out.println("Error: " + e);
+            }
+        }
+
+        // store operation
+        public void storeOp() throws Exception {
+            // checks if the file is already stored
+            if (indexContains(fileName)) {
+                sendMsg("ERROR ALREADY_EXISTS " + fileName);
+                throw new Exception("File already in datastores!");
+            }
+            StringBuilder ports = new StringBuilder("STORE_TO");
+
+            // gets the datastore ports
+            for (int i = 0; i < replicationFactor; i++) {
+                Datastore datastore = dataStores.get(i);
+
+                if (isAvailable(datastore.getIndex())) {
+                    ports.append(" ").append(datastore.getPort());
+                    datastore.setIndex("store in progress");
+                } else {
+                    throw new Exception("Datastores unavailable!");
+                }
+            }
+            sendMsg(ports.toString());
+
+            // waiting for acks
+            for (;;) {
+                // successful store
+                if (acks.size() == replicationFactor) {
+                    sendMsg("STORE_COMPLETE");
+                    break;
+                }
+                Thread.sleep(100);
+            }
+
+            // update the index for each datastore
+            for (int i = 0; i < replicationFactor; i++) {
+                Datastore datastore = dataStores.get(i);
+
+                datastore.addFileName(fileName);
+                datastore.setIndex("store complete");
+            }
+
+            // ends the operation
+            acks.clear();
+            controllerFiles.add(new DatastoreFile(fileName, fileSize));
+        }
+
+        // load operation
+        public void loadOp() throws Exception {
+            // checks if the file exists
+            if (!indexContains(fileName)) {
+                sendMsg("ERROR DOES_NOT EXIST");
+                throw new Exception("File does not exist!");
+            }
+            int currentEndpointIndex = 0;
+
+            // gets a datastore that contains the file
+            for (Datastore datastore : dataStores) {
+                if (datastore.getFileNames().contains(fileName) && (currentEndpointIndex > endpointIndex)) {
+                    sendMsg("LOAD_FROM " + datastore.getPort() + " 6.4mb");
+                    endpointIndex = currentEndpointIndex;
+                    break;
+                } else {
+                    // keeps track of last used datastore
+                    if (currentEndpointIndex != dataStores.size()) {
+                        currentEndpointIndex++;
+                    } else {
+                        sendMsg("ERROR LOAD");
+                        break;
+                    }
+                }
+            }
+        }
+
+        // remove operation
+        public void removeOp() throws Exception {
+            // checks if the file is in the index
+            if (!controllerFiles.contains(fileName)) {
+                sendMsg("ERROR DOES_NOT_EXIST");
+                throw new Exception("File not in index!");
+            }
+
+            // removing the filename from every datastore
+            for (Datastore datastore : dataStores) {
+                if (datastore.getFileNames().contains(fileName)) {
+                    datastore.setIndex("remove in progress");
+                    datastore.getThread().sendMsg("REMOVE " + fileName);
+                }
+            }
+
+            // waiting for acks
+            for (;;) {
+                // successful store
+                if (acks.size() == replicationFactor) {
+                    // removing the filename reference
+                    for (Datastore datastore : dataStores) {
+                        if (datastore.getFileNames().contains(fileName)) {
+                            datastore.removeFileName(fileName);
+                            datastore.setIndex("remove complete");
+                        }
+                    }
+                    sendMsg("REMOVE_COMPLETE");
+                    break;
+                }
+                Thread.sleep(100);
             }
         }
 
@@ -156,13 +234,27 @@ public class Controller {
             return false;
         }
 
+        // checks if a file is available
+        public boolean isAvailable(String index) {
+            return index.equals("available") || index.equals("store complete") || index.equals("remove complete");
+        }
+
+        // sends a message to the client
         public void sendMsg(String msg) {
             out.println(msg);
         }
 
+        // sends a message to the client, expects a response
         public String sendMsgReceiveMsg(String msg) throws Exception {
             out.println(msg);
             return in.readLine();
+        }
+
+        // closes the current socket
+        public void stop() throws Exception {
+            in.close();
+            out.close();
+            socket.close();
         }
     }
 }

@@ -83,7 +83,25 @@ public class Dstore {
                                 sendMsg(datastoreFile.getFileContents());
                             }
                         }
+                        sendMsg("ERROR DOES_NOT_EXIST");
                         stop();
+                    } else if (line.startsWith("REMOVE ")) {
+                        String fileName = line.split(" ")[1];
+                        Boolean found = false;
+
+                        // removes the file
+                        for (DatastoreFile datastoreFile : datastoreFiles) {
+                            if (datastoreFile.getFileName().equals(fileName)) {
+                                datastoreFiles.remove(datastoreFile);
+                                found = true;
+                                break;
+                            }
+                        }
+                        if (found) {
+                            sendMsg("REMOVE_ACK " + fileName);
+                        } else {
+                            sendMsg("ERROR DOES_NOT_EXIST " + fileName);
+                        }
                     }
                 }
             } catch (Exception e) {
@@ -97,20 +115,22 @@ public class Dstore {
             out.flush();
         }
 
+        // sends a message to the client
+        public void sendMsg(String msg) {
+            out.println(msg);
+        }
+
+        // sends a message to the client, expects a response
+        public String sendMsgReceiveMsg(String msg) throws Exception {
+            out.println(msg);
+            return in.readLine();
+        }
+
         // closes the current socket
         public void stop() throws Exception {
             in.close();
             out.close();
             socket.close();
-        }
-
-        public void sendMsg(String msg) {
-            out.println(msg);
-        }
-
-        public String sendMsgReceiveMsg(String msg) throws Exception {
-            out.println(msg);
-            return in.readLine();
         }
     }
 }
