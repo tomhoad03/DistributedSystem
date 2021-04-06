@@ -98,7 +98,7 @@ public class Controller {
                             throw new Exception("File does not exist in datastore!");
                         }
 
-                    } else if (line.startsWith("LIST ")) { // list operation
+                    } else if (line.startsWith("LIST")) { // list operation
                         StringBuilder files = new StringBuilder();
 
                         // gets the list of files
@@ -106,7 +106,7 @@ public class Controller {
                             if (!(files.length() == 0)) {
                                 files.append(" ");
                             }
-                            files.append(controllerFile);
+                            files.append(controllerFile.getFileName());
                         }
                         sendMsg(files.toString());
                     }

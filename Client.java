@@ -27,11 +27,13 @@ class Client {
                 testLoad(files[i]);
             }
 
+            // listing
+            testList();
+
             // removing
             for (int i = 0; i < 6; i++) {
                 testRemove(files[i]);
             }
-
             socket.close();
         }
         catch (Exception e) {
@@ -104,5 +106,10 @@ class Client {
                 break;
             }
         }
+    }
+
+    public static void testList() throws Exception {
+        out.println("LIST");
+        System.out.println(in.readLine());
     }
 }
