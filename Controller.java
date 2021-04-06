@@ -62,7 +62,6 @@ public class Controller {
                 while ((line = in.readLine()) != null) {
                     if (line.startsWith("JOIN ")) { // establish connection to new datastore
                         dataStores.add(new Datastore(line.split(" ")[1], "available", this));
-                        stop();
 
                     } else if (dataStores.size() < replicationFactor) { // disallow client connections
                         throw new Exception("Not enough datastores connected!");
@@ -174,7 +173,7 @@ public class Controller {
 
             // gets a datastore that contains the file
             for (Datastore datastore : dataStores) {
-                if (datastore.getFileNames().contains(fileName) && (currentEndpointIndex > endpointIndex)) {
+                if (datastore.getFileNames().contains(fileName) || (currentEndpointIndex > endpointIndex)) {
                     sendMsg("LOAD_FROM " + datastore.getPort() + " 6.4mb");
                     endpointIndex = currentEndpointIndex;
                     break;
@@ -193,7 +192,7 @@ public class Controller {
         // remove operation
         public void removeOp() throws Exception {
             // checks if the file is in the index
-            if (!controllerFiles.contains(fileName)) {
+            if (!indexContains(fileName)) {
                 sendMsg("ERROR DOES_NOT_EXIST");
                 throw new Exception("File not in index!");
             }
@@ -271,7 +270,7 @@ public class Controller {
  7. Each process gets logged (more info later)
 
  8. Launch in terminal, Ctrl-C to close running program, remove .java with class files
- 9. java Controller.java 6400 1 0 0
- 10. java Dstore.java 6401 6400 0 0
+ 9. java Controller.java 6400 1 1 1
+ 10. java Dstore.java 6401 6400 1 files
  11. java Client.java (for testing only)
  */

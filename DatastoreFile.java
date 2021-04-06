@@ -1,13 +1,13 @@
 public class DatastoreFile {
     private String fileName;
     private String fileSize;
-    private String fileContents;
+    private String fileLocation;
 
     // constructor for dstore file index
-    public DatastoreFile(String fileName, String fileSize, String fileContents) {
+    public DatastoreFile(String fileName, String fileSize, String fileLocation) {
         this.fileName = fileName;
         this.fileSize = fileSize;
-        this.fileContents = fileContents;
+        this.fileLocation = fileLocation;
     }
 
     // constructor for controller file index
@@ -24,8 +24,8 @@ public class DatastoreFile {
         return fileSize;
     }
 
-    public String getFileContents() {
-        return fileContents;
+    public String getFileLocation() {
+        return fileLocation;
     }
 
     public void setFileName(String fileName) {
@@ -36,7 +36,7 @@ public class DatastoreFile {
         this.fileSize = fileSize;
     }
 
-    public void setFileContents(String fileContents) {
-        this.fileContents = fileContents;
+    public void setFileLocation(String fileLocation) {
+        this.fileLocation = fileLocation;
     }
 }

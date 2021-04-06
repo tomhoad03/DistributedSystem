@@ -16,19 +16,30 @@ class Client {
             out = new PrintWriter(socket.getOutputStream(), true);
 
             // storing
-            String[] files = {"test1.txt", "test2.txt", "test3.txt", "test4.txt", "test5.txt", "test6.txt"};
-            for (String file : files) {
-                testStore(file);
+            String[] files = {"test1.txt", "test2.txt", "test3.txt", "test4.txt", "test5.txt", "test6.txt", "test7.txt"};
+            String[] contents = {"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"};
+            for (int i = 0; i < 6; i++) {
+                testStore(files[i], contents[i]);
+            }
+
+            // loading
+            for (int i = 0; i < 6; i++) {
+                testLoad(files[i]);
+            }
+
+            // removing
+            for (int i = 0; i < 6; i++) {
+                testRemove(files[i]);
             }
 
             socket.close();
         }
         catch (Exception e) {
-            System.out.println("error" + e);
+            System.out.println("Error: " + e);
         }
     }
 
-    public static void testStore(String file) throws Exception {
+    public static void testStore(String file, String fileContents) throws Exception {
         out.println("STORE " + file);
 
         while ((line = in.readLine()) != null) {
@@ -46,7 +57,7 @@ class Client {
 
                     while ((clientLine = clientIn.readLine()) != null) {
                         if (clientLine.equals("ACK")) {
-                            clientOut.println("Hello world!");
+                            clientOut.println(fileContents);
                             break;
                         }
                     }
@@ -59,6 +70,37 @@ class Client {
                         }
                     }
                 }
+                break;
+            }
+        }
+    }
+
+    public static void testLoad(String file) throws Exception {
+        out.println("LOAD " + file);
+
+        while ((line = in.readLine()) != null) {
+            if (line.startsWith("LOAD_FROM ")) {
+                String port = line.split(" ")[1];
+                String filesize = line.split(" ")[2];
+
+                Socket dataSocket = new Socket(InetAddress.getLocalHost(), Integer.parseInt(port));
+                BufferedReader dataIn = new BufferedReader(new InputStreamReader(dataSocket.getInputStream()));
+                PrintWriter dataOut = new PrintWriter(dataSocket.getOutputStream(), true);
+
+                dataOut.println("LOAD_DATA " + file);
+                System.out.println(dataIn.readLine());
+                dataSocket.close();
+                break;
+            }
+        }
+    }
+
+    public static void testRemove(String file) throws Exception {
+        out.println("REMOVE " + file);
+
+        while ((line = in.readLine()) != null) {
+            if (line.startsWith("REMOVE_COMPLETE")) {
+                System.out.println("remove complete (" + file + ")");
                 break;
             }
         }
