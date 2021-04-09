@@ -9,6 +9,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 
 @SuppressWarnings({"InfiniteLoopStatement", "ResultOfMethodCallIgnored"})
@@ -20,7 +21,7 @@ public class Dstore {
 
     public static DatastoreThread datastoreThread; // controller connection
 
-    public static ArrayList<DatastoreFile> datastoreFiles = new ArrayList<>();; // list of files in datastore
+    public static ArrayList<String> datastoreFileNames = new ArrayList<>();; // list of files in datastore
 
     public static void main(String[] args) {
         try {
@@ -76,7 +77,7 @@ public class Dstore {
                         file.getParentFile().mkdirs();
                         file.createNewFile();
                         Files.write(Paths.get(file.getPath()), Collections.singleton(fileContents), StandardCharsets.UTF_8);
-                        datastoreFiles.add(new DatastoreFile(fileName, fileSize, fileFolder + File.separator + fileName));
+                        datastoreFileNames.add(fileName);
 
                         // send ack to controller
                         datastoreThread.sendMsg("STORE_ACK " + fileName);
@@ -85,9 +86,9 @@ public class Dstore {
                         String fileName = line.split(" ")[1];
 
                         // gets the file from the datastore folder
-                        for (DatastoreFile datastoreFile : datastoreFiles) {
-                            if (datastoreFile.getFileName().equals(fileName)) {
-                                File file = new File(datastoreFile.getFileLocation());
+                        for (String datastoreFileName : datastoreFileNames) {
+                            if (datastoreFileName.equals(fileName)) {
+                                File file = new File(fileFolder + File.separator + datastoreFileName);
                                 sendMsg(new String(Files.readAllBytes(Paths.get(file.getPath()))));
                             }
                         }
@@ -98,10 +99,10 @@ public class Dstore {
                         boolean found = false;
 
                         // removes the file
-                        for (DatastoreFile datastoreFile : datastoreFiles) {
-                            if (datastoreFile.getFileName().equals(fileName)) {
-                                Files.delete(Paths.get(datastoreFile.getFileLocation()));
-                                datastoreFiles.remove(datastoreFile);
+                        for (String datastoreFileName : datastoreFileNames) {
+                            if (datastoreFileName.equals(fileName)) {
+                                Files.delete(Paths.get(fileFolder + File.separator + datastoreFileName));
+                                datastoreFileNames.remove(datastoreFileName);
                                 found = true;
                                 break;
                             }
@@ -111,6 +112,79 @@ public class Dstore {
                         } else {
                             sendMsg("ERROR DOES_NOT_EXIST " + fileName);
                         }
+
+                    } else if (line.equals("LIST")) {
+                        StringBuilder files = new StringBuilder();
+
+                        // gets the list of files
+                        File folder = new File(fileFolder);
+                        File[] fileList = folder.listFiles();
+                        assert fileList != null;
+                        datastoreFileNames.clear();
+
+                        // looks for files in the folder
+                         for (File file : fileList) {
+                             datastoreFileNames.add(file.getName());
+                        }
+
+                        // builds a list of all the known files
+                        for (String datastoreFileName : datastoreFileNames) {
+                            if (!(files.length() == 0)) {
+                                files.append(" ");
+                            }
+                            files.append(datastoreFileName);
+                        }
+                        sendMsg(files.toString());
+
+                    } else if (line.startsWith("REBALANCE ")) {
+                        ArrayList<String> splitLine = new ArrayList<>(Arrays.asList(line.split(" ")));
+                        int numSends = Integer.parseInt(splitLine.get(1));
+                        int count = 2;
+
+                        // file sending
+                        for (int i = 0; i < numSends - 1; i++) {
+                            String fileName = splitLine.get(count);
+                            int numPorts = Integer.parseInt(splitLine.get(count + 1));
+                            ArrayList<String> ports = (ArrayList<String>) splitLine.subList(count + 2, count + numPorts);
+
+                            // send file to ports
+                            for (String port : ports) {
+                                Socket dstoreSocket = new Socket(InetAddress.getLocalHost(), Integer.parseInt(port));
+                                BufferedReader dstoreIn = new BufferedReader(new InputStreamReader(dstoreSocket.getInputStream()));
+                                PrintWriter dstoreOut = new PrintWriter(dstoreSocket.getOutputStream(), true);
+                                String dstoreLine;
+
+                                File file = new File(fileFolder + File.separator + fileName);
+
+                                dstoreOut.println("STORE " + fileName + " " + file.length());
+
+                                while ((dstoreLine = dstoreIn.readLine()) != null) {
+                                    if (dstoreLine.equals("ACK")) {
+                                        dstoreOut.println(Arrays.toString(Files.readAllBytes(Paths.get(file.getPath()))));
+                                        break;
+                                    }
+                                }
+                                dstoreSocket.close();
+                            }
+                            count = count + numPorts + 1;
+                        }
+
+                        // file removing
+                        if (Integer.parseInt(splitLine.get(count)) > 0) {
+                            ArrayList<String> toRemove = (ArrayList<String>) splitLine.subList(count + 1, splitLine.size());
+
+                            for (String file : toRemove) {
+                                for (String datastoreFileName : datastoreFileNames) {
+                                    if (datastoreFileName.equals(file)) {
+                                        Files.delete(Paths.get(fileFolder + File.separator + datastoreFileName));
+                                        datastoreFileNames.remove(datastoreFileName);
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+
+                        sendMsg("REBALANCE COMPLETE");
                     }
                 }
             } catch (Exception e) {
@@ -133,13 +207,6 @@ public class Dstore {
         public String sendMsgReceiveMsg(String msg) throws Exception {
             out.println(msg);
             return in.readLine();
-        }
-
-        // closes the current socket
-        public void stop() throws Exception {
-            in.close();
-            out.close();
-            socket.close();
         }
     }
 }

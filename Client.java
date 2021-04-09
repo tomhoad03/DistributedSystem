@@ -32,7 +32,7 @@ class Client {
 
             // removing
             for (int i = 0; i < 6; i++) {
-                testRemove(files[i]);
+                //testRemove(files[i]);
             }
             socket.close();
         }
