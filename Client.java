@@ -11,7 +11,7 @@ class Client {
 
     public static void main(String [] args) {
         try {
-            socket = new Socket(InetAddress.getLocalHost(),6400);
+            socket = new Socket(InetAddress.getLocalHost(),6000);
             in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
             out = new PrintWriter(socket.getOutputStream(), true);
 

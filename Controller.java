@@ -1,6 +1,7 @@
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
+import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.*;
@@ -60,36 +61,43 @@ public class Controller {
                 String line;
                 while ((line = in.readLine()) != null) {
                     if (line.startsWith("JOIN ")) { // establish connection to new datastore
-                        datastores.add(new Datastore(line.split(" ")[1], "available", this));
+                        System.out.println("join");
+                        datastores.add(new Datastore(line.split(" ")[1], "available"));
                         rebalanceOp();
 
                     } else if (datastores.size() < replicationFactor) { // disallow client connections
                         throw new Exception("Not enough datastores connected!");
 
                     } else if (line.startsWith("STORE ")) { // store operation
+                        System.out.println("store");
                         fileName = line.split(" ")[1];
                         storeOp();
 
                     } else if (line.startsWith("STORE_ACK ")) { // receive store ack from dstore operation
+                        System.out.println("store ack");
                         String ackName = line.split(" ")[1];
                         if (ackName.equals(fileName)) {
                             acks.add("ACK");
                         }
 
                     } else if (line.startsWith("LOAD ")) { // load operation
+                        System.out.println("load");
                         fileName = line.split(" ")[1];
                         endpointIndex = 0;
                         loadOp();
 
                     } else if (line.startsWith("RELOAD ")) {
+                        System.out.println("reload");
                         fileName = line.split(" ")[1];
                         loadOp();
 
                     } else if (line.startsWith("REMOVE ")) { // remove operation
+                        System.out.println("remove");
                         fileName = line.split(" ")[1];
                         removeOp();
 
                     } else if (line.startsWith("REMOVE_ACK ")) { // receive remove ack from dstore operation
+                        System.out.println("remove ack");
                         String ackName = line.split(" ")[1];
                         if (ackName.equals(fileName)) {
                             acks.add("ACK");
@@ -99,6 +107,7 @@ public class Controller {
                         }
 
                     } else if (line.equals("LIST")) { // list operation
+                        System.out.println("list");
                         sendMsg(listOp());
                     }
                 }
@@ -190,9 +199,12 @@ public class Controller {
 
             // removing the filename from every datastore
             for (Datastore datastore : datastores) {
+                Socket dstoreSocket = new Socket(InetAddress.getLocalHost(), datastore.getPort());
+                PrintWriter dstoreOut = new PrintWriter(dstoreSocket.getOutputStream(), true);
+
                 if (datastore.getFileNames().contains(fileName)) {
                     datastore.setIndex("remove in progress");
-                    datastore.getThread().sendMsg("REMOVE " + fileName);
+                    dstoreOut.println("REMOVE " + fileName);
                 }
             }
 
@@ -237,7 +249,18 @@ public class Controller {
         public void rebalanceOp() throws Exception {
             // updates current filenames for each datastore
             for (Datastore datastore : datastores) {
-                datastore.setFileNames(new ArrayList<>(Arrays.asList(datastore.getThread().sendMsgReceiveMsg("LIST").split(" "))));
+                Socket dstoreSocket = new Socket(InetAddress.getLocalHost(), datastore.getPort());
+                BufferedReader dstoreIn = new BufferedReader(new InputStreamReader(dstoreSocket.getInputStream()));
+                PrintWriter dstoreOut = new PrintWriter(dstoreSocket.getOutputStream(), true);
+
+                dstoreOut.println("LIST");
+                ArrayList<String> fileNames = new ArrayList<>(Arrays.asList(dstoreIn.readLine().split(" ")));
+
+                if (!fileNames.contains("")) {
+                    datastore.setFileNames(fileNames);
+                } else {
+                    datastore.setFileNames(new ArrayList<>());
+                }
             }
             listOp();
 
@@ -291,49 +314,54 @@ public class Controller {
                     foundLocations.remove(locationOfMin);
                     count--;
                 }
+            }
 
-                // sends rebalance message to datastores
-                for (Datastore datastore : datastores) {
-                    StringBuilder rebalanceMsg = new StringBuilder("REBALANCE ");
-                    StringBuilder filesToSend = new StringBuilder();
-                    StringBuilder filesToRemove = new StringBuilder();
+            // sends rebalance message to datastores
+            for (Datastore datastore : datastores) {
+                Socket dstoreSocket = new Socket(InetAddress.getLocalHost(), datastore.getPort());
+                BufferedReader dstoreIn = new BufferedReader(new InputStreamReader(dstoreSocket.getInputStream()));
+                PrintWriter dstoreOut = new PrintWriter(dstoreSocket.getOutputStream(), true);
 
-                    // files to send
-                    try {
-                        filesToSend.append(datastore.getToSend().size());
+                StringBuilder rebalanceMsg = new StringBuilder("REBALANCE ");
+                StringBuilder filesToSend = new StringBuilder();
+                StringBuilder filesToRemove = new StringBuilder();
 
-                        for (Map.Entry<String, ArrayList<String>> entry : datastore.getToSend().entrySet()) {
-                            filesToSend.append(" ").append(entry.getValue());
+                // files to send
+                try {
+                    filesToSend.append(datastore.getToSend().size());
 
-                            for (String toSend : entry.getValue()) {
-                                filesToSend.append(" ").append(toSend);
-                            }
+                    for (Map.Entry<String, ArrayList<String>> entry : datastore.getToSend().entrySet()) {
+                        filesToSend.append(" ").append(entry.getValue());
+
+                        for (String toSend : entry.getValue()) {
+                            filesToSend.append(" ").append(toSend);
                         }
-                    } catch (Exception ignored) {
-                        filesToSend.append("0");
                     }
+                } catch (Exception ignored) {
+                    filesToSend.append("0");
+                }
 
-                    // files to remove
-                    try {
-                        filesToSend.append(datastore.getToRemove().size());
+                // files to remove
+                try {
+                    filesToSend.append(datastore.getToRemove().size());
 
-                        for (String toRemove : datastore.getToRemove()) {
-                            if (filesToRemove.length() != 0) {
-                                filesToRemove.append(datastore.getToRemove().size());
-                            }
-                            filesToRemove.append(" ").append(toRemove);
+                    for (String toRemove : datastore.getToRemove()) {
+                        if (filesToRemove.length() != 0) {
+                            filesToRemove.append(datastore.getToRemove().size());
                         }
-                    } catch (Exception ignored) {
-                        filesToSend.append(" 0");
+                        filesToRemove.append(" ").append(toRemove);
                     }
+                } catch (Exception ignored) {
+                    filesToSend.append(" 0");
+                }
 
-                    // send the rebalance message
-                    String msg = String.valueOf(rebalanceMsg.append(filesToSend).append(filesToRemove));
-                    String response = datastore.getThread().sendMsgReceiveMsg(msg);
+                // send the rebalance message
+                String msg = String.valueOf(rebalanceMsg.append(filesToSend).append(filesToRemove));
+                dstoreOut.println(msg);
+                String response = dstoreIn.readLine();
 
-                    if (response.equals("REBALANCE COMPLETE")) {
-                        System.out.println("rebalance complete");
-                    }
+                if (response.equals("REBALANCE COMPLETE")) {
+                    System.out.println("rebalance complete");
                 }
             }
         }
@@ -368,7 +396,8 @@ public class Controller {
  7. Each process gets logged (more info later)
 
  8. Launch in terminal, Ctrl-C to close running program, remove .java with class files
- 9. java Controller.java 6400 1 1 1
- 10. java Dstore.java 6401 6400 1 files
- 11. java Client.java (for testing only)
+ 9. java Controller 6000 1 1 1
+ 10a. java Dstore 6100 6000 1 files1
+ 10b. java Dstore 6200 6000 1 files2
+ 11. java Client (for testing only)
  */

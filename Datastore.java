@@ -9,14 +9,12 @@ public class Datastore {
     private int numFiles;
     private Map<String, ArrayList<String>> toSend;
     private ArrayList<String> toRemove;
-    private Controller.ControllerThread thread;
 
-    public Datastore(String port, String index, Controller.ControllerThread thread) {
+    public Datastore(String port, String index) {
         this.port = Integer.parseInt(port);
         this.index = index;
         this.fileNames = new ArrayList<>();
         this.numFiles = 0;
-        this.thread = thread;
     }
 
     public int getPort() {
@@ -41,10 +39,6 @@ public class Datastore {
 
     public ArrayList<String> getToRemove() {
         return toRemove;
-    }
-
-    public Controller.ControllerThread getThread() {
-        return thread;
     }
 
     public void setPort(int port) {
@@ -88,9 +82,5 @@ public class Datastore {
 
     public void removeToRemove(String toRemove) {
         this.toRemove.remove(toRemove);
-    }
-
-    public void setThread(Controller.ControllerThread thread) {
-        this.thread = thread;
     }
 }

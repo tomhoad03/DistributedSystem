@@ -21,7 +21,7 @@ public class Dstore {
 
     public static DatastoreThread datastoreThread; // controller connection
 
-    public static ArrayList<String> datastoreFileNames = new ArrayList<>();; // list of files in datastore
+    public static ArrayList<String> datastoreFileNames = new ArrayList<>(); // list of files in datastore
 
     public static void main(String[] args) {
         try {
@@ -66,6 +66,7 @@ public class Dstore {
                 String line;
                 while ((line = in.readLine()) != null) {
                     if (line.startsWith("STORE ")) { // store operation
+                        System.out.println("store");
                         String fileName = line.split(" ")[1];
                         String fileSize = line.split(" ")[2];
 
@@ -83,6 +84,7 @@ public class Dstore {
                         datastoreThread.sendMsg("STORE_ACK " + fileName);
 
                     } else if (line.startsWith("LOAD_DATA ")) {
+                        System.out.println("load");
                         String fileName = line.split(" ")[1];
 
                         // gets the file from the datastore folder
@@ -95,6 +97,7 @@ public class Dstore {
                         sendMsg("ERROR DOES_NOT_EXIST");
 
                     } else if (line.startsWith("REMOVE ")) {
+                        System.out.println("remove");
                         String fileName = line.split(" ")[1];
                         boolean found = false;
 
@@ -114,6 +117,7 @@ public class Dstore {
                         }
 
                     } else if (line.equals("LIST")) {
+                        System.out.println("list");
                         StringBuilder files = new StringBuilder();
 
                         // gets the list of files
@@ -134,9 +138,12 @@ public class Dstore {
                             }
                             files.append(datastoreFileName);
                         }
-                        sendMsg(files.toString());
+                        String toSend = files.toString();
+                        System.out.println(toSend);
+                        sendMsg(toSend);
 
                     } else if (line.startsWith("REBALANCE ")) {
+                        System.out.println("rebalance");
                         ArrayList<String> splitLine = new ArrayList<>(Arrays.asList(line.split(" ")));
                         int numSends = Integer.parseInt(splitLine.get(1));
                         int count = 2;
@@ -183,10 +190,11 @@ public class Dstore {
                                 }
                             }
                         }
-
+                        System.out.println("rebalance complete");
                         sendMsg("REBALANCE COMPLETE");
                     }
                 }
+                socket.close();
             } catch (Exception e) {
                 System.out.println("Error: " + e);
             }
@@ -194,8 +202,8 @@ public class Dstore {
 
         // establish connection to controller
         public void joinController() {
+            System.out.println("join");
             out.println("JOIN " + datastorePort);
-            out.flush();
         }
 
         // sends a message to the client
