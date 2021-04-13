@@ -1,7 +1,4 @@
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.InputStreamReader;
-import java.io.PrintWriter;
+import java.io.*;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -73,11 +70,16 @@ public class Dstore {
                         // send ack to client and get file contents
                         String fileContents = sendMsgReceiveMsg("ACK");
 
-                        // store file contents
+                        // create new file
                         File file = new File(fileFolder + File.separator + fileName);
                         file.getParentFile().mkdirs();
                         file.createNewFile();
-                        Files.write(Paths.get(file.getPath()), Collections.singleton(fileContents), StandardCharsets.UTF_8);
+
+                        // write to file
+                        BufferedWriter writer = new BufferedWriter(new FileWriter(file.getPath()));
+                        writer.write(fileContents);
+                        writer.close();
+
                         datastoreFileNames.add(fileName);
 
                         // send ack to controller
@@ -167,7 +169,21 @@ public class Dstore {
 
                                 while ((dstoreLine = dstoreIn.readLine()) != null) {
                                     if (dstoreLine.equals("ACK")) {
-                                        dstoreOut.println(Arrays.toString(Files.readAllBytes(Paths.get(file.getPath()))));
+                                        BufferedReader reader = new BufferedReader(new FileReader(file.getPath()));
+                                        StringBuilder fileContents = new StringBuilder();
+                                        String readerLine;
+
+                                        // reads the contents of the file
+                                        while ((readerLine = reader.readLine()) != null) {
+                                            if (fileContents.length() == 0) {
+                                                fileContents.append(readerLine);
+                                            } else {
+                                                fileContents.append(File.separator).append(readerLine);
+                                            }
+                                        }
+                                        reader.close();
+
+                                        dstoreOut.println(fileContents.toString());
                                         break;
                                     }
                                 }
