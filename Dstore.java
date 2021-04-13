@@ -149,10 +149,10 @@ public class Dstore {
                         int count = 2;
 
                         // file sending
-                        for (int i = 0; i < numSends - 1; i++) {
+                        for (int i = 0; i <= numSends - 1; i++) {
                             String fileName = splitLine.get(count);
                             int numPorts = Integer.parseInt(splitLine.get(count + 1));
-                            ArrayList<String> ports = (ArrayList<String>) splitLine.subList(count + 2, count + numPorts);
+                            ArrayList<String> ports = new ArrayList<>(splitLine.subList(count + 2, count + numPorts + 2));
 
                             // send file to ports
                             for (String port : ports) {
@@ -173,7 +173,7 @@ public class Dstore {
                                 }
                                 dstoreSocket.close();
                             }
-                            count = count + numPorts + 1;
+                            count = count + numPorts + 2;
                         }
 
                         // file removing

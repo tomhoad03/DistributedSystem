@@ -265,54 +265,63 @@ public class Controller {
             listOp();
 
             for (String datastoreFile : datastoreFileNames) {
-                int count = 0;
+                int index = 0;
+                int foundCount = 0;
                 ArrayList<Integer> foundLocations = new ArrayList<>();
                 ArrayList<Integer> notFoundLocations = new ArrayList<>();
 
                 // counts how many datastore the file is stored in
                 for (Datastore datastore : datastores) {
                    if (datastore.getFileNames().contains(datastoreFile)) {
-                       foundLocations.add(count);
-                       count++;
+                       foundLocations.add(index);
+                       foundCount++;
                    } else {
-                       notFoundLocations.add(count);
+                       notFoundLocations.add(index);
                    }
+                    index++;
                 }
 
-                // determines files to remove from the datastores
-                while (count > replicationFactor) {
-                    int locationOfMax = 0;
-                    int numOfMax = 0;
-
-                    // removes from the datastore with the most files
-                    for (int location : foundLocations) {
-                        Datastore datastore = datastores.get(location);
-                        if (datastore.getNumFiles() > numOfMax) {
-                            locationOfMax = location;
-                            numOfMax = datastore.getNumFiles();
-                        }
-                    }
-                    datastores.get(locationOfMax).addToRemove(datastoreFile);
-                    foundLocations.remove(locationOfMax);
-                    count--;
-                }
-
-                //  determines files to add to the datastores
-                while (count < replicationFactor) {
-                    int locationOfMin = 0;
-                    int numOfMin = 0;
-
-                    // adds to the datastore with the least files
+                // adds to every store if there are less datastores than R
+                if (datastores.size() <= replicationFactor) {
                     for (int location : notFoundLocations) {
-                        Datastore datastore = datastores.get(location);
-                        if (datastore.getNumFiles() < numOfMin || numOfMin == 0) {
-                            locationOfMin = location;
-                            numOfMin = datastore.getNumFiles();
-                        }
+                        datastores.get(foundLocations.get(0)).addToSend(datastoreFile, String.valueOf(datastores.get(location).getPort()));
                     }
-                    datastores.get(foundLocations.get(0)).addToSend(datastoreFile, String.valueOf(datastores.get(locationOfMin).getPort()));
-                    foundLocations.remove(locationOfMin);
-                    count--;
+                } else {
+                    //  determines files to add to the datastores
+                    while (foundCount < replicationFactor) {
+                        int locationOfMin = 0;
+                        int numOfMin = 0;
+
+                        // adds to the datastore with the least files
+                        for (int location : notFoundLocations) {
+                            Datastore datastore = datastores.get(location);
+                            if (datastore.getNumFiles() < numOfMin || numOfMin == 0) {
+                                locationOfMin = location;
+                                numOfMin = datastore.getNumFiles();
+                            }
+                        }
+                        datastores.get(foundLocations.get(0)).addToSend(datastoreFile, String.valueOf(datastores.get(locationOfMin).getPort()));
+                        foundLocations.remove(locationOfMin);
+                        foundCount--;
+                    }
+
+                    // determines files to remove from the datastores
+                    while (foundCount > replicationFactor) {
+                        int locationOfMax = 0;
+                        int numOfMax = 0;
+
+                        // removes from the datastore with the most files
+                        for (int location : foundLocations) {
+                            Datastore datastore = datastores.get(location);
+                            if (datastore.getNumFiles() > numOfMax) {
+                                locationOfMax = location;
+                                numOfMax = datastore.getNumFiles();
+                            }
+                        }
+                        datastores.get(locationOfMax).addToRemove(datastoreFile);
+                        foundLocations.remove(locationOfMax);
+                        foundCount--;
+                    }
                 }
             }
 
@@ -331,7 +340,7 @@ public class Controller {
                     filesToSend.append(datastore.getToSend().size());
 
                     for (Map.Entry<String, ArrayList<String>> entry : datastore.getToSend().entrySet()) {
-                        filesToSend.append(" ").append(entry.getValue());
+                        filesToSend.append(" ").append(entry.getKey()).append(" ").append(entry.getValue().size());
 
                         for (String toSend : entry.getValue()) {
                             filesToSend.append(" ").append(toSend);
@@ -343,7 +352,7 @@ public class Controller {
 
                 // files to remove
                 try {
-                    filesToSend.append(datastore.getToRemove().size());
+                    filesToSend.append(" ").append(datastore.getToRemove().size());
 
                     for (String toRemove : datastore.getToRemove()) {
                         if (filesToRemove.length() != 0) {
@@ -396,7 +405,7 @@ public class Controller {
  7. Each process gets logged (more info later)
 
  8. Launch in terminal, Ctrl-C to close running program, remove .java with class files
- 9. java Controller 6000 1 1 1
+ 9. java Controller 6000 2 1 1
  10a. java Dstore 6100 6000 1 files1
  10b. java Dstore 6200 6000 1 files2
  11. java Client (for testing only)

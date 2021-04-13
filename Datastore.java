@@ -1,5 +1,6 @@
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.Map;
 
 public class Datastore {
@@ -15,6 +16,8 @@ public class Datastore {
         this.index = index;
         this.fileNames = new ArrayList<>();
         this.numFiles = 0;
+        this.toSend = new HashMap<>();
+        this.toRemove = new ArrayList<>();
     }
 
     public int getPort() {
