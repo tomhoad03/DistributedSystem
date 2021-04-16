@@ -2,12 +2,10 @@ import java.io.*;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 
 @SuppressWarnings({"InfiniteLoopStatement", "ResultOfMethodCallIgnored"})
 public class Dstore {
@@ -183,7 +181,7 @@ public class Dstore {
                                         }
                                         reader.close();
 
-                                        dstoreOut.println(fileContents.toString());
+                                        dstoreOut.println(fileContents);
                                         break;
                                     }
                                 }
@@ -194,7 +192,7 @@ public class Dstore {
 
                         // file removing
                         if (Integer.parseInt(splitLine.get(count)) > 0) {
-                            ArrayList<String> toRemove = (ArrayList<String>) splitLine.subList(count + 1, splitLine.size());
+                            ArrayList<String> toRemove = new ArrayList<>(splitLine.subList(count + 1, splitLine.size()));
 
                             for (String file : toRemove) {
                                 for (String datastoreFileName : datastoreFileNames) {
@@ -218,6 +216,12 @@ public class Dstore {
 
         // establish connection to controller
         public void joinController() {
+            File folder = new File(fileFolder);
+
+            if (!new File(fileFolder).exists()) {
+                folder.mkdir();
+            }
+
             System.out.println("join");
             out.println("JOIN " + datastorePort);
         }
