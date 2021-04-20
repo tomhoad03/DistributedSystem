@@ -3,7 +3,7 @@ import java.net.*;
 import java.util.ArrayList;
 import java.util.Arrays;
 
-class Client {
+class ClientTest {
     public static Socket socket;
     public static BufferedReader in;
     public static PrintWriter out;
@@ -16,9 +16,10 @@ class Client {
             out = new PrintWriter(socket.getOutputStream(), true);
 
             // storing
-            String[] files = {"test1.txt", "test2.txt", "test3.txt", "test4.txt", "test5.txt", "test6.txt", "test7.txt"};
+            String[] files = {"test10.txt", "test20.txt", "test30.txt", "test40.txt", "test50.txt", "test60.txt", "test70.txt"};
             String[] contents = {"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"};
             for (int i = 0; i < 6; i++) {
+                System.out.println("Store " + files[i]);
                 testStore(files[i], contents[i]);
             }
 
@@ -64,15 +65,14 @@ class Client {
                         }
                     }
                     dstoreSocket.close();
-
-                    while ((line = in.readLine()) != null) {
-                        if (line.equals("STORE_COMPLETE")) {
-                            System.out.println("store complete (" + file + ")");
-                            break;
-                        }
+                }
+                while ((line = in.readLine()) != null) {
+                    if (line.equals("STORE_COMPLETE")) {
+                        return;
                     }
                 }
-                break;
+            } else if (line.equals("ERROR_FILE_ALREADY_EXISTS")) {
+                return;
             }
         }
     }

@@ -61,7 +61,6 @@ public class Dstore {
                 String line;
                 while ((line = in.readLine()) != null) {
                     if (line.startsWith("STORE ")) { // store operation
-                        System.out.println("store");
                         String fileName = line.split(" ")[1];
                         String fileSize = line.split(" ")[2];
 
@@ -81,23 +80,28 @@ public class Dstore {
                         datastoreFileNames.add(fileName);
 
                         // send ack to controller
-                        datastoreThread.sendMsg("STORE_ACK " + fileName);
+                        if (socket.getPort() == datastorePort || socket.getLocalPort() == datastorePort) {
+                            datastoreThread.sendMsg("STORE_ACK " + fileName);
+                        }
 
                     } else if (line.startsWith("LOAD_DATA ")) {
-                        System.out.println("load");
                         String fileName = line.split(" ")[1];
+                        boolean found = false;
 
                         // gets the file from the datastore folder
                         for (String datastoreFileName : datastoreFileNames) {
                             if (datastoreFileName.equals(fileName)) {
                                 File file = new File(fileFolder + File.separator + datastoreFileName);
                                 sendMsg(new String(Files.readAllBytes(Paths.get(file.getPath()))));
+                                found = true;
+                                break;
                             }
                         }
-                        sendMsg("ERROR DOES_NOT_EXIST");
+                        if (!found) {
+                            sendMsg("ERROR_FILE_DOES_NOT_EXIST");
+                        }
 
                     } else if (line.startsWith("REMOVE ")) {
-                        System.out.println("remove");
                         String fileName = line.split(" ")[1];
                         boolean found = false;
 
@@ -111,13 +115,12 @@ public class Dstore {
                             }
                         }
                         if (found) {
-                            sendMsg("REMOVE_ACK " + fileName);
+                            datastoreThread.sendMsg("REMOVE_ACK " + fileName);
                         } else {
-                            sendMsg("ERROR DOES_NOT_EXIST " + fileName);
+                            sendMsg("ERROR_FILE_DOES_NOT_EXIST " + fileName);
                         }
 
                     } else if (line.equals("LIST")) {
-                        System.out.println("list");
                         StringBuilder files = new StringBuilder();
 
                         // gets the list of files
@@ -139,11 +142,9 @@ public class Dstore {
                             files.append(datastoreFileName);
                         }
                         String toSend = files.toString();
-                        System.out.println(toSend);
                         sendMsg(toSend);
 
                     } else if (line.startsWith("REBALANCE ")) {
-                        System.out.println("rebalance");
                         ArrayList<String> splitLine = new ArrayList<>(Arrays.asList(line.split(" ")));
                         int numSends = Integer.parseInt(splitLine.get(1));
                         int count = 2;
@@ -204,7 +205,6 @@ public class Dstore {
                                 }
                             }
                         }
-                        System.out.println("rebalance complete");
                         sendMsg("REBALANCE COMPLETE");
                     }
                 }
@@ -217,12 +217,10 @@ public class Dstore {
         // establish connection to controller
         public void joinController() {
             File folder = new File(fileFolder);
-
-            if (!new File(fileFolder).exists()) {
+            if (!folder.exists()) {
                 folder.mkdir();
             }
 
-            System.out.println("join");
             out.println("JOIN " + datastorePort);
         }
 

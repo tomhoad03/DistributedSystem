@@ -20,8 +20,9 @@ public class Controller {
     public static ArrayList<String> acks = new ArrayList<>(); // list of all the acks received in the current operation
 
     public static int endpoint;
-    public static String fileName;
-    public static boolean controllerIndex = true;
+    public static int refreshRate = 100;
+    public static boolean rebalanceIndex = false; // false when not rebalancing
+    public static boolean controllerIndex = true; // true when available
     public static LocalDateTime lastRebalance = LocalDateTime.now();
 
     public static void main(String[] args) {
@@ -47,7 +48,7 @@ public class Controller {
                                 lastRebalance = LocalDateTime.now();
                             }
                         }
-                        Thread.sleep(100);
+                        Thread.sleep(refreshRate);
                     } catch (Exception ignored) { }
                 }
             });
@@ -63,7 +64,7 @@ public class Controller {
                         ControllerThread controllerThread = new ControllerThread(clientSocket);
                         new Thread((controllerThread)).start();
 
-                        Thread.sleep(100);
+                        Thread.sleep(refreshRate);
                     } catch (Exception ignored) { }
                 }
             });
@@ -90,56 +91,49 @@ public class Controller {
             try {
                 String line;
                 while ((line = in.readLine()) != null) {
-                    if (line.startsWith("JOIN ")) { // establish connection to new datastore
-                        //System.out.println("join");
-                        datastores.add(new Datastore(line.split(" ")[1], "available"));
-                        rebalanceOp();
-
-                    } else if (datastores.size() < replicationFactor) { // disallow client connections
-                        throw new Exception("Not enough datastores connected!");
-
-                    } else if (line.startsWith("STORE ")) { // store operation
-                        //System.out.println("store");
-                        fileName = line.split(" ")[1];
-                        storeOp();
-
-                    } else if (line.startsWith("STORE_ACK ")) { // receive store ack from dstore operation
-                        //System.out.println("store ack");
-                        String ackName = line.split(" ")[1];
-                        if (ackName.equals(fileName)) {
-                            acks.add("ACK");
+                    System.out.println(line);
+                    for (;;) {
+                        if (controllerIndex) {
+                            controllerIndex = false;
+                            if (line.startsWith("JOIN ")) { // establish connection to new datastore
+                                datastores.add(new Datastore(line.split(" ")[1], "available"));
+                                rebalanceOp();
+                                break;
+                            } else if (datastores.size() < replicationFactor) { // disallow client connections
+                                out.println("ERROR_NOT_ENOUGH_DSTORES");
+                                break;
+                            } else if (line.startsWith("STORE ")) { // store operation
+                                storeOp(line.split(" ")[1]);
+                                break;
+                            } else if (line.startsWith("LOAD ")) { // load operation
+                                endpoint = 0;
+                                loadOp(line.split(" ")[1]);
+                                break;
+                            } else if (line.startsWith("REMOVE ")) { // remove operation
+                                removeOp(line.split(" ")[1]);
+                                break;
+                            } else if (line.equals("LIST")) { // list operation
+                                out.println(listOp());
+                                break;
+                            }
+                        } else if (!rebalanceIndex) {
+                            if (line.startsWith("STORE_ACK ")) { // receive store ack from dstore operation
+                                acks.add("ACK");
+                                break;
+                            } else if (line.startsWith("REMOVE_ACK ")) { // receive remove ack from dstore operation
+                                String ackName = line.split(" ")[1];
+                                if (datastoreFileNames.contains(ackName)) {
+                                    acks.add("ACK");
+                                }
+                                break;
+                            } else if (line.startsWith("RELOAD ")) { // reload operation
+                                loadOp(line.split(" ")[1]);
+                                break;
+                            }
                         }
-
-                    } else if (line.startsWith("LOAD ")) { // load operation
-                        //System.out.println("load");
-                        fileName = line.split(" ")[1];
-                        endpoint = 0;
-                        loadOp();
-
-                    } else if (line.startsWith("RELOAD ")) {
-                        //System.out.println("reload");
-                        fileName = line.split(" ")[1];
-                        loadOp();
-
-                    } else if (line.startsWith("REMOVE ")) { // remove operation
-                        //System.out.println("remove");
-                        fileName = line.split(" ")[1];
-                        removeOp();
-
-                    } else if (line.startsWith("REMOVE_ACK ")) { // receive remove ack from dstore operation
-                        //System.out.println("remove ack");
-                        String ackName = line.split(" ")[1];
-                        if (ackName.equals(fileName)) {
-                            acks.add("ACK");
-                        } else if (ackName.equals("DOES_NOT_EXIST")) {
-                            acks.add("ACK");
-                            throw new Exception("File does not exist in datastore!");
-                        }
-
-                    } else if (line.equals("LIST")) { // list operation
-                        //System.out.println("list");
-                        sendMsg(listOp());
+                        Thread.sleep(refreshRate);
                     }
+                    controllerIndex = true;
                 }
                 socket.close();
             } catch (Exception e) {
@@ -148,11 +142,11 @@ public class Controller {
         }
 
         // store operation
-        public void storeOp() throws Exception {
+        public void storeOp(String fileName) throws Exception {
             // checks if the file is already stored
             if (datastoreFileNames.contains(fileName)) {
-                sendMsg("ERROR ALREADY_EXISTS " + fileName);
-                throw new Exception("File already in datastores!");
+                out.println("ERROR_FILE_ALREADY_EXISTS");
+                return;
             }
             StringBuilder ports = new StringBuilder("STORE_TO");
 
@@ -167,16 +161,16 @@ public class Controller {
                     throw new Exception("Datastores unavailable!");
                 }
             }
-            sendMsg(ports.toString());
+            out.println(ports);
 
             // waiting for acks
             for (;;) {
                 // successful store
                 if (acks.size() == replicationFactor) {
-                    sendMsg("STORE_COMPLETE");
+                    out.println("STORE_COMPLETE");
                     break;
                 }
-                Thread.sleep(100);
+                Thread.sleep(refreshRate);
             }
 
             // update the index for each datastore
@@ -193,10 +187,10 @@ public class Controller {
         }
 
         // load operation
-        public void loadOp() throws Exception {
+        public void loadOp(String fileName) throws Exception {
             // checks if the file exists
             if (!datastoreFileNames.contains(fileName)) {
-                sendMsg("ERROR DOES_NOT EXIST");
+                out.println("ERROR_FILE_DOES_NOT_EXIST");
                 throw new Exception("File does not exist!");
             }
             int currentEndpoint = 0;
@@ -204,7 +198,7 @@ public class Controller {
             // gets a datastore that contains the file
             for (Datastore datastore : datastores) {
                 if (datastore.getFileNames().contains(fileName) || (currentEndpoint > endpoint)) {
-                    sendMsg("LOAD_FROM " + datastore.getPort() + " 6.4mb");
+                    out.println("LOAD_FROM " + datastore.getPort() + " 6.4mb");
                     endpoint = currentEndpoint;
                     break;
                 } else {
@@ -212,7 +206,7 @@ public class Controller {
                     if (currentEndpoint != datastores.size()) {
                         currentEndpoint++;
                     } else {
-                        sendMsg("ERROR LOAD");
+                        out.println("ERROR_LOAD");
                         break;
                     }
                 }
@@ -220,10 +214,10 @@ public class Controller {
         }
 
         // remove operation
-        public void removeOp() throws Exception {
+        public void removeOp(String fileName) throws Exception {
             // checks if the file is in the index
             if (!datastoreFileNames.contains(fileName)) {
-                sendMsg("ERROR DOES_NOT_EXIST");
+                out.println("ERROR DOES_NOT_EXIST");
                 throw new Exception("File not in index!");
             }
 
@@ -249,10 +243,10 @@ public class Controller {
                             datastore.setIndex("remove complete");
                         }
                     }
-                    sendMsg("REMOVE_COMPLETE");
+                    out.println("REMOVE_COMPLETE");
                     break;
                 }
-                Thread.sleep(100);
+                Thread.sleep(refreshRate);
             }
 
             // ends the operation
@@ -263,17 +257,6 @@ public class Controller {
         // checks if a file is available
         public boolean isAvailable(String index) {
             return index.equals("available") || index.equals("store complete") || index.equals("remove complete");
-        }
-
-        // sends a message to the client
-        public void sendMsg(String msg) {
-            out.println(msg);
-        }
-
-        // sends a message to the client, expects a response
-        public String sendMsgReceiveMsg(String msg) throws Exception {
-            out.println(msg);
-            return in.readLine();
         }
     }
 
@@ -298,6 +281,8 @@ public class Controller {
 
     // rebalance operation
     public static void rebalanceOp() throws Exception {
+        rebalanceIndex = true;
+
         // updates current filenames for each datastore
         for (Datastore datastore : datastores) {
             Socket dstoreSocket = new Socket(InetAddress.getLocalHost(), datastore.getPort());
@@ -375,6 +360,7 @@ public class Controller {
                 }
             }
             acks.clear();
+            rebalanceIndex = false;
         }
 
         // sends rebalance message to datastores
