@@ -1,7 +1,11 @@
-import java.io.*;
-import java.net.*;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.io.PrintWriter;
+import java.net.InetAddress;
+import java.net.Socket;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Random;
 
 class ClientTest {
     public static Socket socket;
@@ -9,12 +13,28 @@ class ClientTest {
     public static PrintWriter out;
     public static String line;
 
-    public static void main(String [] args) {
+    public static void main(String[] args) {
         try {
             socket = new Socket(InetAddress.getLocalHost(),6000);
             in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
             out = new PrintWriter(socket.getOutputStream(), true);
 
+            Random rand = new Random();
+            String[] operations = {"STORE filename filesize", "LOAD filename", "REMOVE filename", "LIST"};
+
+            for (int i = 0; i < rand.nextInt(250); i++) {
+                out.println(operations[rand.nextInt(3)]);
+
+                String line = in.readLine();
+                if (line.equals("ERROR_NOT_ENOUGH_DSTORES")) {
+                    System.out.println("Operation Error: Not enough datastores");
+                    break;
+                } else {
+                    System.out.println(line);
+                }
+            }
+
+            /*
             // storing
             String[] files = {"test10.txt", "test20.txt", "test30.txt", "test40.txt", "test50.txt", "test60.txt", "test70.txt"};
             String[] contents = {"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"};
@@ -33,12 +53,13 @@ class ClientTest {
 
             // removing
             for (int i = 0; i < 6; i++) {
-                //testRemove(files[i]);
+                // testRemove(files[i]); // must test
             }
+             */
             socket.close();
         }
         catch (Exception e) {
-            System.out.println("Error: " + e);
+            System.out.println("Client Error: " + e);
         }
     }
 
