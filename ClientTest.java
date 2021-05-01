@@ -1,11 +1,12 @@
 import java.io.BufferedReader;
+import java.io.File;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.InetAddress;
 import java.net.Socket;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Random;
 
 class ClientTest {
     public static Socket socket;
@@ -19,52 +20,37 @@ class ClientTest {
             in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
             out = new PrintWriter(socket.getOutputStream(), true);
 
-            Random rand = new Random();
-            String[] operations = {"STORE filename filesize", "LOAD filename", "REMOVE filename", "LIST"};
-
-            for (int i = 0; i < rand.nextInt(250); i++) {
-                out.println(operations[rand.nextInt(3)]);
-
-                String line = in.readLine();
-                if (line.equals("ERROR_NOT_ENOUGH_DSTORES")) {
-                    System.out.println("Operation Error: Not enough datastores");
-                    break;
-                } else {
-                    System.out.println(line);
-                }
-            }
-
-            /*
             // storing
-            String[] files = {"test10.txt", "test20.txt", "test30.txt", "test40.txt", "test50.txt", "test60.txt", "test70.txt"};
-            String[] contents = {"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"};
-            for (int i = 0; i < 6; i++) {
-                System.out.println("Store " + files[i]);
-                testStore(files[i], contents[i]);
+            File downloadFolder = new File("TestFiles");
+            File[] downloadFiles = downloadFolder.listFiles();
+            if (downloadFiles != null) {
+                for (File downloadFile : downloadFiles) {
+                    System.out.println("Store " + downloadFile.getName());
+                    testStore(downloadFile);
+                }
             }
 
             // loading
             for (int i = 0; i < 6; i++) {
-                testLoad(files[i]);
+                //testLoad(files[i]);
             }
 
             // listing
-            testList();
+            //testList();
 
             // removing
             for (int i = 0; i < 6; i++) {
                 // testRemove(files[i]); // must test
             }
-             */
             socket.close();
         }
         catch (Exception e) {
-            System.out.println("Client Error: " + e);
+            System.out.println("Error: " + e);
         }
     }
 
-    public static void testStore(String file, String fileContents) throws Exception {
-        out.println("STORE " + file);
+    public static void testStore(File file) throws Exception {
+        out.println("STORE " + file.getName());
 
         while ((line = in.readLine()) != null) {
             if (line.startsWith("STORE_TO ")) {
@@ -77,11 +63,11 @@ class ClientTest {
                     PrintWriter clientOut = new PrintWriter(dstoreSocket.getOutputStream(), true);
                     String clientLine;
 
-                    clientOut.println("STORE " + file + " 6.4mb");
+                    clientOut.println("STORE " + file.getName() + " " + file.length());
 
                     while ((clientLine = clientIn.readLine()) != null) {
                         if (clientLine.equals("ACK")) {
-                            clientOut.println(fileContents);
+                            dstoreSocket.getOutputStream().write(Files.readAllBytes(file.toPath()));
                             break;
                         }
                     }
@@ -93,6 +79,8 @@ class ClientTest {
                     }
                 }
             } else if (line.equals("ERROR_FILE_ALREADY_EXISTS")) {
+                return;
+            } else if (line.equals("ERROR_NOT_ENOUGH_DSTORES")) {
                 return;
             }
         }

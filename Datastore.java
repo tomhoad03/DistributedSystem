@@ -1,11 +1,11 @@
 import java.util.ArrayList;
 
-public class DstoreClass {
+public class Datastore {
     private int port;
     private boolean index;
     private ArrayList<String> fileNames;
 
-    public DstoreClass(int port, boolean index, ArrayList<String> fileNames) {
+    public Datastore(int port, boolean index, ArrayList<String> fileNames) {
         this.port = port;
         this.index = index;
         this.fileNames = fileNames;
@@ -19,7 +19,7 @@ public class DstoreClass {
         this.port = port;
     }
 
-    public boolean isIndex() {
+    public boolean getIndex() {
         return index;
     }
 
