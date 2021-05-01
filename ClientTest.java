@@ -25,7 +25,6 @@ class ClientTest {
             File[] downloadFiles = downloadFolder.listFiles();
             if (downloadFiles != null) {
                 for (File downloadFile : downloadFiles) {
-                    System.out.println("Store " + downloadFile.getName());
                     testStore(downloadFile);
                 }
             }
@@ -36,7 +35,7 @@ class ClientTest {
             }
 
             // listing
-            //testList();
+            testList();
 
             // removing
             for (int i = 0; i < 6; i++) {
@@ -50,6 +49,7 @@ class ClientTest {
     }
 
     public static void testStore(File file) throws Exception {
+        System.out.println("STORE " + file.getName());
         out.println("STORE " + file.getName());
 
         while ((line = in.readLine()) != null) {
@@ -79,8 +79,10 @@ class ClientTest {
                     }
                 }
             } else if (line.equals("ERROR_FILE_ALREADY_EXISTS")) {
+                System.out.println(line);
                 return;
             } else if (line.equals("ERROR_NOT_ENOUGH_DSTORES")) {
+                System.out.println(line);
                 return;
             }
         }
@@ -118,7 +120,9 @@ class ClientTest {
     }
 
     public static void testList() throws Exception {
+        System.out.println("LIST");
         out.println("LIST");
+
         System.out.println(in.readLine());
     }
 }

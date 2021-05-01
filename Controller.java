@@ -15,13 +15,14 @@ public class Controller {
     public static int rebalancePeriod;
 
     public static int acks = 0;
+    public static int endpoint = 0;
     public static int refreshRate = 2;
     public static boolean inRebalance = false;
     public static boolean inOperation = false;
     public static LocalDateTime lastRebalance = LocalDateTime.now();
 
     public static ArrayList<Datastore> dstores = new ArrayList<>();
-    public static HashSet<String> dstoreFileNames = new HashSet<>();
+    public static HashSet<DatastoreFile> datastoreFiles = new HashSet<>();
 
     public static void main(String[] args) {
         try {
@@ -40,7 +41,7 @@ public class Controller {
                     try {
                         // establish connection to new client or datastore
                         final Socket clientSocket = controllerSocket.accept();
-                        new Thread((new ControllerThread(clientSocket))).start();
+                        new Thread(new ControllerThread(clientSocket)).start();
 
                         Thread.sleep(refreshRate);
                     } catch (Exception e) { System.out.println("Socket Error: " + e);}
@@ -52,9 +53,7 @@ public class Controller {
             Thread rebalanceThread = new Thread(() -> {
                 for (;;) {
                     try {
-                        LocalDateTime now = LocalDateTime.now();
-                        LocalDateTime nextRebalance = lastRebalance.plus(rebalancePeriod, ChronoUnit.MILLIS);
-                        if (now.isAfter(nextRebalance) || inRebalance) {
+                        if (LocalDateTime.now().isAfter(lastRebalance.plus(rebalancePeriod, ChronoUnit.MILLIS)) || inRebalance) {
                             inRebalance = true;
 
                             if (!inOperation) {
@@ -105,21 +104,32 @@ public class Controller {
                                     System.out.println("Log: Malformed joined message");
                                 }
 
-                            } else if (dstores.size() < replicationFactor) {
+                            } else if (dstores.size() < replicationFactor || dstores.size() == 0) {
                                 out.println("ERROR_NOT_ENOUGH_DSTORES");
 
                             } else if (line.startsWith("STORE ")) {
-                                storeOp(line.split(" ")[1]);
+                                storeOp(line.split(" ")[1], line.split(" ")[2]);
                                 System.out.println(line);
 
                             } else if (line.startsWith("LOAD ")) {
+                                loadOp(line.split(" ")[1]);
                                 System.out.println(line);
 
                             } else if (line.startsWith("REMOVE")) {
                                 System.out.println(line);
 
-                            } else if (line.startsWith("LIST")) {
-                                System.out.println(line);
+                            } else if (line.equals("LIST")) {
+                                try {
+                                    StringBuilder fileNames = new StringBuilder("LIST");
+
+                                    for (DatastoreFile datastoreFile : datastoreFiles) {
+                                        fileNames.append(" ").append(datastoreFile.getFileName());
+                                    }
+                                    out.println(fileNames);
+
+                                } catch (Exception e) {
+                                    System.out.println("Log: Malformed list message");
+                                }
 
                             }
                             break;
@@ -134,15 +144,21 @@ public class Controller {
                     System.out.println("Finished: " + line);
                     inOperation = false;
                 }
-            } catch (Exception e) { System.out.println("Operation Error: " + e); }
+            } catch (Exception e) {
+                System.out.println("Operation Error: " + e);
+                inRebalance = true;
+                inOperation = false;
+            }
         }
 
         // store operation
-        public void storeOp(String fileName) {
+        public void storeOp(String fileName, String fileSize) {
             // checks if the file is already stored
-            if (dstoreFileNames.contains(fileName)) {
-                out.println("ERROR_FILE_ALREADY_EXISTS");
-                return;
+            for (DatastoreFile datastoreFile : datastoreFiles) {
+                if (datastoreFile.getFileName().equals(fileName)) {
+                    out.println("ERROR_FILE_ALREADY_EXISTS");
+                    return;
+                }
             }
             StringBuilder ports = new StringBuilder("STORE_TO");
 
@@ -180,7 +196,40 @@ public class Controller {
                 Datastore dstore = dstores.get(i);
                 dstore.setIndex(true);
             }
-            dstoreFileNames.add(fileName);
+            datastoreFiles.add(new DatastoreFile(fileName, Integer.parseInt(fileSize)));
+        }
+
+        // load operation
+        public void loadOp(String fileName) {
+            // checks if the file exists
+            for (DatastoreFile datastoreFile : datastoreFiles) {
+                if (datastoreFile.getFileName().equals(fileName)) {
+                    out.println("ERROR_FILE_DOES_NOT_EXIST");
+                    return;
+                }
+            }
+            int currentEndpoint = 0;
+
+            // gets a datastore that contains the file
+            for (Datastore dstore : dstores) {
+                if (dstore.getFileNames().contains(fileName) || (currentEndpoint > endpoint)) {
+                    for (DatastoreFile datastoreFile : datastoreFiles) {
+                        if (datastoreFile.getFileName().equals(fileName)) {
+                            out.println("LOAD_FROM " + dstore.getPort() + " " + datastoreFile.getFileSize());
+                        }
+                    }
+                    endpoint = currentEndpoint;
+                    break;
+                } else {
+                    // keeps track of last used datastore
+                    if (currentEndpoint != dstores.size()) {
+                        currentEndpoint++;
+                    } else {
+                        out.println("ERROR_LOAD");
+                        break;
+                    }
+                }
+            }
         }
     }
 }
