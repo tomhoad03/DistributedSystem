@@ -3,6 +3,9 @@ import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.util.Arrays;
+import java.util.Objects;
 
 public class Dstore {
     public static int datastorePort;
@@ -81,6 +84,25 @@ public class Dstore {
                         if (socket.getPort() == datastorePort || socket.getLocalPort() == datastorePort) {
                             dstoreThread.out.println("STORE_ACK " + fileName);
                         }
+                    } else if (line.startsWith("LOAD_DATA ")) {
+                        String fileName = line.split(" ")[1];
+                        boolean found = false;
+
+                        try {
+                            for (File file : Objects.requireNonNull(new File(fileFolder).listFiles())) {
+                                if (file.getName().equals(fileName)) {
+                                    socket.getOutputStream().write(Files.readAllBytes(file.toPath()));
+                                    found = true;
+                                    break;
+                                }
+                            }
+                        } catch (Exception e) {
+                            System.out.println("Log: Malformed load message from the client");
+                        }
+                        if (!found) {
+                            out.println("ERROR_FILE_DOES_NOT_EXIST");
+                        }
+
                     }
                 }
             } catch (Exception e) { System.out.println("Operation Error: " + e); }

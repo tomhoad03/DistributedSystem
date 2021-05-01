@@ -4,9 +4,12 @@ import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.InetAddress;
 import java.net.Socket;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Base64;
+import java.util.Random;
 
 class ClientTest {
     public static Socket socket;
@@ -21,7 +24,7 @@ class ClientTest {
             out = new PrintWriter(socket.getOutputStream(), true);
 
             // storing
-            File downloadFolder = new File("TestFiles");
+            File downloadFolder = new File("src/UploadFiles");
             File[] downloadFiles = downloadFolder.listFiles();
             if (downloadFiles != null) {
                 for (File downloadFile : downloadFiles) {
@@ -30,8 +33,10 @@ class ClientTest {
             }
 
             // loading
-            for (int i = 0; i < 6; i++) {
-                //testLoad(files[i]);
+            if (downloadFiles != null) {
+                for (File downloadFile : downloadFiles) {
+                    testLoad(downloadFile, "LOAD ");
+                }
             }
 
             // listing
@@ -49,8 +54,8 @@ class ClientTest {
     }
 
     public static void testStore(File file) throws Exception {
-        System.out.println("STORE " + file.getName());
-        out.println("STORE " + file.getName());
+        System.out.println("STORE " + file.getName() + " " + file.length());
+        out.println("STORE " + file.getName() + " " + file.length());
 
         while ((line = in.readLine()) != null) {
             if (line.startsWith("STORE_TO ")) {
@@ -88,22 +93,41 @@ class ClientTest {
         }
     }
 
-    public static void testLoad(String file) throws Exception {
-        out.println("LOAD " + file);
+    public static void testLoad(File file, String load) throws Exception {
+        System.out.println(load + file.getName());
+        out.println(load + file.getName());
 
         while ((line = in.readLine()) != null) {
             if (line.startsWith("LOAD_FROM ")) {
-                String port = line.split(" ")[1];
-                String filesize = line.split(" ")[2];
+                try {
+                    String port = line.split(" ")[1];
+                    String fileSize = line.split(" ")[2];
 
-                Socket dataSocket = new Socket(InetAddress.getLocalHost(), Integer.parseInt(port));
-                BufferedReader dataIn = new BufferedReader(new InputStreamReader(dataSocket.getInputStream()));
-                PrintWriter dataOut = new PrintWriter(dataSocket.getOutputStream(), true);
+                    Socket dataSocket = new Socket(InetAddress.getLocalHost(), Integer.parseInt(port));
+                    PrintWriter dataOut = new PrintWriter(dataSocket.getOutputStream(), true);
 
-                dataOut.println("LOAD_DATA " + file);
-                System.out.println(dataIn.readLine());
-                dataSocket.close();
-                break;
+                    dataOut.println("LOAD_DATA " + file.getName());
+                    byte[] contents = dataSocket.getInputStream().readNBytes(Integer.parseInt(fileSize));
+
+                    if ("ERROR_FILE_DOES_NOT_EXIST".contains(new String(contents, StandardCharsets.UTF_8))) {
+                        testLoad(file, "RELOAD ");
+                        break;
+                    }
+                    Random rand = new Random();
+                    File newFile = new File("src/DownloadFiles/test" + (rand.nextInt(999) + 6) + ".txt");
+                    Files.write(newFile.toPath(), Arrays.copyOfRange(contents, 0, Integer.parseInt(fileSize)));
+                    dataSocket.close();
+                    break;
+                } catch (Exception e) {
+                    System.out.println("Log: Malformed load message from the client");
+                    break;
+                }
+            } else if (line.equals("ERROR_FILE_DOES_NOT_EXIST")) {
+                System.out.println(line);
+                return;
+            } else if (line.equals("ERROR_LOAD")) {
+                System.out.println(line);
+                return;
             }
         }
     }

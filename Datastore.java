@@ -34,4 +34,8 @@ public class Datastore {
     public void setFileNames(ArrayList<String> fileNames) {
         this.fileNames = fileNames;
     }
+
+    public void addFileName(String fileName) {
+        this.fileNames.add(fileName);
+    }
 }

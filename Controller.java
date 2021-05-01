@@ -91,8 +91,17 @@ public class Controller {
                     System.out.println("Received: " + line);
 
                     for (;;) {
-                        if (!inOperation && !inRebalance) {
+                        if (line.startsWith("STORE_ACK ")) {
+                            acks++;
+                            break;
+                        } else if (!inOperation && !inRebalance) {
                             inOperation = true;
+
+                            if (line.startsWith("RELOAD ")) {
+                                loadOp(line.split(" ")[1]);
+
+                            }
+                            endpoint = 0;
                             acks = 0;
 
                             if (line.startsWith("JOIN")) {
@@ -134,10 +143,6 @@ public class Controller {
                             }
                             break;
                         }
-                        if (line.startsWith("STORE_ACK ")) { // receive store ack from dstore operation
-                            acks++;
-                            break;
-                        }
                         Thread.sleep(refreshRate);
                     }
 
@@ -169,6 +174,7 @@ public class Controller {
                 if (dstore.getIndex()) {
                     ports.append(" ").append(dstore.getPort());
                     dstore.setIndex(false);
+                    dstore.addFileName(fileName);
                 } else {
                     System.out.println("Datastore " + dstore.getPort() + " unavailable");
                 }
@@ -202,32 +208,34 @@ public class Controller {
         // load operation
         public void loadOp(String fileName) {
             // checks if the file exists
+            boolean found = false;
+
             for (DatastoreFile datastoreFile : datastoreFiles) {
                 if (datastoreFile.getFileName().equals(fileName)) {
-                    out.println("ERROR_FILE_DOES_NOT_EXIST");
-                    return;
+                    found = true;
+                    break;
                 }
             }
-            int currentEndpoint = 0;
+            if (!found) {
+                out.println("ERROR_FILE_DOES_NOT_EXIST");
+                return;
+            }
+            int currentEndpoint = 1;
 
             // gets a datastore that contains the file
             for (Datastore dstore : dstores) {
-                if (dstore.getFileNames().contains(fileName) || (currentEndpoint > endpoint)) {
+                if (dstore.getFileNames().contains(fileName) && (currentEndpoint > endpoint)) {
                     for (DatastoreFile datastoreFile : datastoreFiles) {
                         if (datastoreFile.getFileName().equals(fileName)) {
+                            endpoint = currentEndpoint;
                             out.println("LOAD_FROM " + dstore.getPort() + " " + datastoreFile.getFileSize());
+                            break;
                         }
                     }
-                    endpoint = currentEndpoint;
-                    break;
+                } else if (currentEndpoint < dstores.size()) {
+                    currentEndpoint++;
                 } else {
-                    // keeps track of last used datastore
-                    if (currentEndpoint != dstores.size()) {
-                        currentEndpoint++;
-                    } else {
-                        out.println("ERROR_LOAD");
-                        break;
-                    }
+                    out.println("ERROR_LOAD");
                 }
             }
         }
