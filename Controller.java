@@ -1,6 +1,7 @@
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
+import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.time.LocalDateTime;
@@ -21,7 +22,7 @@ public class Controller {
     public static boolean inOperation = false;
     public static LocalDateTime lastRebalance = LocalDateTime.now();
 
-    public static ArrayList<Datastore> dstores = new ArrayList<>();
+    public static ArrayList<Datastore> datastores = new ArrayList<>();
     public static HashSet<DatastoreFile> datastoreFiles = new HashSet<>();
 
     public static void main(String[] args) {
@@ -94,6 +95,9 @@ public class Controller {
                         if (line.startsWith("STORE_ACK ")) {
                             acks++;
                             break;
+                        } else if (line.startsWith("REMOVE_ACK ")) {
+                            acks++;
+                            break;
                         } else if (!inOperation && !inRebalance) {
                             inOperation = true;
 
@@ -106,46 +110,47 @@ public class Controller {
 
                             if (line.startsWith("JOIN")) {
                                 try {
-                                    dstores.add(new Datastore(Integer.parseInt(line.split(" ")[1]), true, new ArrayList<>()));
+                                    int port = Integer.parseInt(line.split(" ")[1]);
+                                    datastores.add(new Datastore(port, true, new ArrayList<>()));
                                     inRebalance = true;
-
                                 } catch (Exception e) {
-                                    System.out.println("Log: Malformed joined message");
+                                    System.out.println("Log: Malformed joined message from datastore");
                                 }
-
-                            } else if (dstores.size() < replicationFactor || dstores.size() == 0) {
+                            } else if (datastores.size() < replicationFactor || datastores.size() == 0) {
                                 out.println("ERROR_NOT_ENOUGH_DSTORES");
-
                             } else if (line.startsWith("STORE ")) {
-                                storeOp(line.split(" ")[1], line.split(" ")[2]);
-                                System.out.println(line);
-
+                                try {
+                                    storeOp(line.split(" ")[1], line.split(" ")[2]);
+                                } catch (Exception e) {
+                                    System.out.println("Log: Malformed store message from client");
+                                }
                             } else if (line.startsWith("LOAD ")) {
-                                loadOp(line.split(" ")[1]);
-                                System.out.println(line);
-
+                                try {
+                                    loadOp(line.split(" ")[1]);
+                                } catch (Exception e) {
+                                    System.out.println("Log: Malformed load message from client");
+                                }
                             } else if (line.startsWith("REMOVE")) {
+                                try {
+                                    removeOp(line.split(" ")[1]);
+                                } catch (Exception e) {
+                                    System.out.println("Log: Malformed remove message from client");
+                                }
                                 System.out.println(line);
 
                             } else if (line.equals("LIST")) {
-                                try {
-                                    StringBuilder fileNames = new StringBuilder("LIST");
-
-                                    for (DatastoreFile datastoreFile : datastoreFiles) {
-                                        fileNames.append(" ").append(datastoreFile.getFileName());
-                                    }
-                                    out.println(fileNames);
-
-                                } catch (Exception e) {
-                                    System.out.println("Log: Malformed list message");
+                                StringBuilder fileNames = new StringBuilder("LIST");
+                                for (DatastoreFile datastoreFile : datastoreFiles) {
+                                    fileNames.append(" ").append(datastoreFile.getFileName());
                                 }
-
+                                out.println(fileNames);
+                            } else {
+                                System.out.println("Log: Malformed and unknown message from client (" + line + ")");
                             }
                             break;
                         }
                         Thread.sleep(refreshRate);
                     }
-
                     System.out.println("Finished: " + line);
                     inOperation = false;
                 }
@@ -169,7 +174,7 @@ public class Controller {
 
             // gets the datastore ports
             for (int i = 0; i < replicationFactor; i++) {
-                Datastore dstore = dstores.get(i);
+                Datastore dstore = datastores.get(i);
 
                 if (dstore.getIndex()) {
                     ports.append(" ").append(dstore.getPort());
@@ -199,7 +204,7 @@ public class Controller {
 
             // update the index for each datastore
             for (int i = 0; i < replicationFactor; i++) {
-                Datastore dstore = dstores.get(i);
+                Datastore dstore = datastores.get(i);
                 dstore.setIndex(true);
             }
             datastoreFiles.add(new DatastoreFile(fileName, Integer.parseInt(fileSize)));
@@ -223,7 +228,7 @@ public class Controller {
             int currentEndpoint = 1;
 
             // gets a datastore that contains the file
-            for (Datastore dstore : dstores) {
+            for (Datastore dstore : datastores) {
                 if (dstore.getFileNames().contains(fileName) && (currentEndpoint > endpoint)) {
                     for (DatastoreFile datastoreFile : datastoreFiles) {
                         if (datastoreFile.getFileName().equals(fileName)) {
@@ -232,12 +237,63 @@ public class Controller {
                             break;
                         }
                     }
-                } else if (currentEndpoint < dstores.size()) {
+                } else if (currentEndpoint < datastores.size()) {
                     currentEndpoint++;
                 } else {
                     out.println("ERROR_LOAD");
                 }
             }
+        }
+
+        // remove operation
+        public void removeOp(String fileName) throws Exception {
+            // checks if the file is in the index
+            boolean found = false;
+            for (DatastoreFile datastoreFile : datastoreFiles) {
+                if (datastoreFile.getFileName().equals(fileName)) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                out.println("ERROR_FILE_DOES_NOT_EXIST");
+                return;
+            }
+
+            // removing the filename from every datastore
+            for (Datastore datastore : datastores) {
+                Socket dstoreSocket = new Socket(InetAddress.getLocalHost(), datastore.getPort());
+                PrintWriter dstoreOut = new PrintWriter(dstoreSocket.getOutputStream(), true);
+
+                if (datastore.getFileNames().contains(fileName)) {
+                    datastore.setIndex(false);
+                    dstoreOut.println("REMOVE " + fileName);
+                }
+            }
+
+            // waiting for acks
+            LocalDateTime timeoutEnd = LocalDateTime.now().plus(timeout, ChronoUnit.MILLIS);
+            for (;;) {
+                LocalDateTime now = LocalDateTime.now();
+                if (!now.isAfter(timeoutEnd)) {
+                    // successful store
+                    if (acks == replicationFactor) {
+                        // removing the filename reference
+                        for (Datastore datastore : datastores) {
+                            if (datastore.getFileNames().contains(fileName)) {
+                                datastore.removeFileName(fileName);
+                                datastore.setIndex(true);
+                            }
+                        }
+                        out.println("REMOVE_COMPLETE");
+                        break;
+                    }
+                } else {
+                    System.out.println("Log: not all remove acks received");
+                    break;
+                }
+            }
+            datastoreFiles.removeIf(datastoreFile -> datastoreFile.getFileName().equals(fileName));
         }
     }
 }

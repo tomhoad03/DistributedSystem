@@ -43,8 +43,10 @@ class ClientTest {
             testList();
 
             // removing
-            for (int i = 0; i < 6; i++) {
-                // testRemove(files[i]); // must test
+            if (downloadFiles != null) {
+                for (File downloadFile : downloadFiles) {
+                    testRemove(downloadFile);
+                }
             }
             socket.close();
         }
@@ -132,13 +134,12 @@ class ClientTest {
         }
     }
 
-    public static void testRemove(String file) throws Exception {
-        out.println("REMOVE " + file);
+    public static void testRemove(File file) throws Exception {
+        out.println("REMOVE " + file.getName());
 
         while ((line = in.readLine()) != null) {
-            if (line.startsWith("REMOVE_COMPLETE")) {
-                System.out.println("remove complete (" + file + ")");
-                break;
+            if (line.equals("REMOVE_COMPLETE")) {
+                return;
             }
         }
     }

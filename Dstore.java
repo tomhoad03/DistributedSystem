@@ -3,8 +3,6 @@ import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.file.Files;
-import java.nio.file.Paths;
-import java.util.Arrays;
 import java.util.Objects;
 
 public class Dstore {
@@ -66,29 +64,31 @@ public class Dstore {
                     System.out.println(line);
 
                     if (line.startsWith("STORE ")) { // store operation
-                        String fileName = line.split(" ")[1];
-                        String fileSize = line.split(" ")[2];
-
-                        // send ack to client and get file contents
-                        out.println("ACK");
-
                         try {
+                            String fileName = line.split(" ")[1];
+                            String fileSize = line.split(" ")[2];
+
+                            // send ack to client and get file contents
+                            out.println("ACK");
+
                             byte[] fileContents = socket.getInputStream().readNBytes(Integer.parseInt(fileSize));
                             File file = new File(fileFolder + File.separator + fileName);
                             file.getParentFile().mkdirs();
                             file.createNewFile();
                             Files.write(file.toPath(), fileContents);
-                        } catch (Exception e) { System.out.println("Log: Malformed store message from the client"); }
 
-                        // send ack to controller
-                        if (socket.getPort() == datastorePort || socket.getLocalPort() == datastorePort) {
-                            dstoreThread.out.println("STORE_ACK " + fileName);
+                            // send ack to controller
+                            if (socket.getPort() == datastorePort || socket.getLocalPort() == datastorePort) {
+                                dstoreThread.out.println("STORE_ACK " + fileName);
+                            }
+                        } catch (Exception e) {
+                            System.out.println("Log: Malformed store request from the client");
                         }
                     } else if (line.startsWith("LOAD_DATA ")) {
-                        String fileName = line.split(" ")[1];
                         boolean found = false;
-
                         try {
+                            String fileName = line.split(" ")[1];
+
                             for (File file : Objects.requireNonNull(new File(fileFolder).listFiles())) {
                                 if (file.getName().equals(fileName)) {
                                     socket.getOutputStream().write(Files.readAllBytes(file.toPath()));
@@ -102,7 +102,26 @@ public class Dstore {
                         if (!found) {
                             out.println("ERROR_FILE_DOES_NOT_EXIST");
                         }
+                    } else if (line.startsWith("REMOVE ")) {
+                        boolean found = false;
+                        try {
+                            String fileName = line.split(" ")[1];
 
+                            for (File file : Objects.requireNonNull(new File(fileFolder).listFiles())) {
+                                if (file.getName().equals(fileName)) {
+                                    Files.delete(file.toPath());
+                                    found = true;
+                                    break;
+                                }
+                            }
+                            if (found) {
+                                dstoreThread.out.println("REMOVE_ACK " + fileName);
+                            } else {
+                                System.out.println(line);
+                            }
+                        } catch (Exception e) {
+                            System.out.println("Log: Malformed remove message from the controller");
+                        }
                     }
                 }
             } catch (Exception e) { System.out.println("Operation Error: " + e); }

@@ -38,4 +38,8 @@ public class Datastore {
     public void addFileName(String fileName) {
         this.fileNames.add(fileName);
     }
+
+    public void removeFileName(String fileName) {
+        this.fileNames.remove(fileName);
+    }
 }
