@@ -12,7 +12,8 @@ public class Dstore {
     public static String fileFolder;
 
     public static int refreshRate = 2;
-    public static DstoreThread dstoreThread;
+    public static DstoreThread datastoreThread;
+    public static DstoreLogger datastoreLogger;
 
     public static void main(String[] args) {
         try {
@@ -22,13 +23,15 @@ public class Dstore {
             timeout = Integer.parseInt(args[2]); // timeout wait time
             fileFolder = args[3]; // location of data store
 
+            datastoreLogger = new DstoreLogger(Logger.LoggingType.ON_TERMINAL_ONLY, datastorePort);
+
             // establish datastore listener
             ServerSocket datastoreSocket = new ServerSocket(datastorePort);
 
             // establish connection to controller
-            dstoreThread = new DstoreThread(new Socket(InetAddress.getLocalHost(), controllerPort));
-            new Thread(dstoreThread).start();
-            dstoreThread.joinController();
+            datastoreThread = new DstoreThread(new Socket(InetAddress.getLocalHost(), controllerPort));
+            new Thread(datastoreThread).start();
+            datastoreThread.joinController();
 
             // thread for receiving new clients
             Thread socketThread = new Thread(() -> {
@@ -39,11 +42,15 @@ public class Dstore {
                         new Thread(new DstoreThread(clientSocket)).start();
 
                         Thread.sleep(refreshRate);
-                    } catch (Exception e) { System.out.println("Socket Error: " + e);}
+                    } catch (Exception e) {
+                        datastoreLogger.log("Socket error (" + e + ")");
+                    }
                 }
             });
             socketThread.start();
-        } catch (Exception e) { System.out.println("Error: " + e); }
+        } catch (Exception e) {
+            datastoreLogger.log("Server error (" + e + ")");
+        }
     }
 
     static class DstoreThread implements Runnable {
@@ -61,7 +68,7 @@ public class Dstore {
             try {
                 String line;
                 while ((line = in.readLine()) != null) {
-                    System.out.println(line);
+                    datastoreLogger.messageReceived(socket, line);
 
                     if (line.startsWith("STORE ")) { // store operation
                         try {
@@ -69,6 +76,7 @@ public class Dstore {
                             String fileSize = line.split(" ")[2];
 
                             // send ack to client and get file contents
+                            datastoreLogger.messageSent(socket, "ACK");
                             out.println("ACK");
 
                             byte[] fileContents = socket.getInputStream().readNBytes(Integer.parseInt(fileSize));
@@ -79,10 +87,11 @@ public class Dstore {
 
                             // send ack to controller
                             if (socket.getPort() == datastorePort || socket.getLocalPort() == datastorePort) {
-                                dstoreThread.out.println("STORE_ACK " + fileName);
+                                datastoreLogger.messageSent(datastoreThread.socket, "STORE_ACK " + fileName);
+                                datastoreThread.out.println("STORE_ACK " + fileName);
                             }
                         } catch (Exception e) {
-                            System.out.println("Log: Malformed store request from the client");
+                            datastoreLogger.log("Malformed store message from the client (" + line + ")");
                         }
                     } else if (line.startsWith("LOAD_DATA ")) {
                         boolean found = false;
@@ -97,9 +106,10 @@ public class Dstore {
                                 }
                             }
                         } catch (Exception e) {
-                            System.out.println("Log: Malformed load message from the client");
+                            datastoreLogger.log("Malformed load message from the client (" + line + ")");
                         }
                         if (!found) {
+                            datastoreLogger.messageSent(datastoreThread.socket, "ERROR_FILE_DOES_NOT_EXIST");
                             out.println("ERROR_FILE_DOES_NOT_EXIST");
                         }
                     } else if (line.startsWith("REMOVE ")) {
@@ -115,16 +125,17 @@ public class Dstore {
                                 }
                             }
                             if (found) {
-                                dstoreThread.out.println("REMOVE_ACK " + fileName);
-                            } else {
-                                System.out.println(line);
+                                datastoreLogger.messageSent(datastoreThread.socket, "REMOVE_ACK " + fileName);
+                                datastoreThread.out.println("REMOVE_ACK " + fileName);
                             }
                         } catch (Exception e) {
-                            System.out.println("Log: Malformed remove message from the controller");
+                            datastoreLogger.log("Malformed remove message from the client (" + line + ")");
                         }
                     }
                 }
-            } catch (Exception e) { System.out.println("Operation Error: " + e); }
+            } catch (Exception e) {
+                datastoreLogger.log("Operation error (" + e + ")");
+            }
         }
 
         public void joinController() throws Exception {
@@ -135,6 +146,7 @@ public class Dstore {
                     throw new Exception("Cannot join controller");
                 }
             }
+            datastoreLogger.messageSent(socket, "JOIN " + datastorePort);
             out.println("JOIN " + datastorePort);
         }
     }
