@@ -390,7 +390,7 @@ public class Controller {
             // determines the destinations
             try {
                 int n = replicationFactor;
-                for (int i = 0; i < n && i < datastores.size(); i++) {
+                for (int i = 0; i < (n - 1) && i < datastores.size(); i++) {
                     Datastore datastore = datastores.get(i);
 
                     if (datastore.containsSendFile(fileName)) {
@@ -428,6 +428,7 @@ public class Controller {
 /*
 1. javac Controller.java
 2. java Controller 6000 1 10000 10000
+
 3. javac Dstore.java
 4a. java Dstore 6100 6000 10000 Files1
 4b. run as many additional dstores as needed

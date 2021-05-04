@@ -1,4 +1,5 @@
 import java.net.Socket;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 
@@ -54,7 +55,9 @@ public class Datastore implements Comparable {
 
     public void setFileNames(String[] fileNames) {
         this.fileNames = new HashSet<>();
-        Collections.addAll(this.fileNames, fileNames);
+        if (!fileNames[0].equals("")) {
+            Collections.addAll(this.fileNames, fileNames);
+        }
     }
 
     public void addFileName(String fileName) {
@@ -69,7 +72,8 @@ public class Datastore implements Comparable {
         rebalanceCount = 0;
         sendFiles = new HashSet<>();
         keepFiles = new HashSet<>();
-        removeFiles = fileNames;
+        removeFiles = new HashSet<>();
+        removeFiles.addAll(fileNames);
     }
 
     public void newSend(String fileName) {
@@ -79,6 +83,14 @@ public class Datastore implements Comparable {
 
     public HashSet<RebalanceFile> getSendFiles() {
         return sendFiles;
+    }
+
+    public HashSet<String> getKeepFiles() {
+        return keepFiles;
+    }
+
+    public HashSet<String> getRemoveFiles() {
+        return removeFiles;
     }
 
     public boolean containsSendFile(String fileName) {
