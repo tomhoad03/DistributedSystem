@@ -23,7 +23,7 @@ public class Dstore {
             timeout = Integer.parseInt(args[2]); // timeout wait time
             fileFolder = args[3]; // location of data store
 
-            datastoreLogger = new DstoreLogger(Logger.LoggingType.ON_TERMINAL_ONLY, datastorePort);
+            datastoreLogger = new DstoreLogger(Logger.LoggingType.ON_FILE_AND_TERMINAL, datastorePort);
 
             // establish datastore listener
             ServerSocket datastoreSocket = new ServerSocket(datastorePort);

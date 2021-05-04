@@ -135,6 +135,7 @@ class ClientTest {
     }
 
     public static void testRemove(File file) throws Exception {
+        System.out.println("REMOVE " + file.getName());
         out.println("REMOVE " + file.getName());
 
         while ((line = in.readLine()) != null) {

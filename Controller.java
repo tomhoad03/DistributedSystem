@@ -14,7 +14,7 @@ public class Controller {
     public static int replicationFactor;
     public static int timeout;
     public static int rebalancePeriod;
-    
+
     public static int acks = 0;
     public static int endpoint = 0;
     public static int refreshRate = 2;
@@ -34,7 +34,7 @@ public class Controller {
             timeout = Integer.parseInt(args[2]); // timeout wait time
             rebalancePeriod = Integer.parseInt(args[3]); // rebalance wait time
 
-            controllerLogger = new ControllerLogger(Logger.LoggingType.ON_TERMINAL_ONLY);
+            controllerLogger = new ControllerLogger(Logger.LoggingType.ON_FILE_AND_TERMINAL);
 
             // establish controller listener
             ServerSocket controllerSocket = new ServerSocket(controllerPort);
@@ -101,13 +101,21 @@ public class Controller {
                     controllerLogger.messageReceived(socket, line);
 
                     for (;;) {
-                        if (line.startsWith("STORE_ACK ")) {
+                        if (line.equals("LIST")) {
+                            StringBuilder fileNames = new StringBuilder("LIST");
+                            for (DatastoreFile datastoreFile : datastoreFiles) {
+                                fileNames.append(" ").append(datastoreFile.getFileName());
+                            }
+                            out.println(fileNames);
+                            break;
+                        } else if (line.startsWith("STORE_ACK ")) {
                             acks++;
                             break;
                         } else if (line.startsWith("REMOVE_ACK ")) {
                             acks++;
                             break;
-                        } else if (!inOperation && !inRebalance) {
+                        }
+                        if (!inOperation && !inRebalance) {
                             inOperation = true;
                             if (line.startsWith("RELOAD ")) {
                                 loadOp(line.split(" ")[1]);
@@ -145,14 +153,7 @@ public class Controller {
                                 } catch (Exception e) {
                                     controllerLogger.log("Malformed remove message from datastore (" + line + ")");
                                 }
-                                System.out.println(line);
 
-                            } else if (line.equals("LIST")) {
-                                StringBuilder fileNames = new StringBuilder("LIST");
-                                for (DatastoreFile datastoreFile : datastoreFiles) {
-                                    fileNames.append(" ").append(datastoreFile.getFileName());
-                                }
-                                out.println(fileNames);
                             } else {
                                 controllerLogger.log("Malformed and unknown message from datastore (" + line + ")");
                             }
