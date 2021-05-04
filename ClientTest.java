@@ -45,7 +45,7 @@ class ClientTest {
             // removing
             if (downloadFiles != null) {
                 for (File downloadFile : downloadFiles) {
-                    testRemove(downloadFile);
+                    // testRemove(downloadFile);
                 }
             }
             socket.close();
@@ -146,9 +146,7 @@ class ClientTest {
     }
 
     public static void testList() throws Exception {
-        System.out.println("LIST");
         out.println("LIST");
-
         System.out.println(in.readLine());
     }
 }

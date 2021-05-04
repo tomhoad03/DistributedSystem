@@ -23,17 +23,15 @@ public class Dstore {
             timeout = Integer.parseInt(args[2]); // timeout wait time
             fileFolder = args[3]; // location of data store
 
-            datastoreLogger = new DstoreLogger(Logger.LoggingType.ON_FILE_AND_TERMINAL, datastorePort);
-
-            // establish datastore listener
             ServerSocket datastoreSocket = new ServerSocket(datastorePort);
+            datastoreLogger = new DstoreLogger(Logger.LoggingType./*ON_FILE_AND_TERMINAL*/ON_TERMINAL_ONLY, datastorePort);
 
             // establish connection to controller
             datastoreThread = new DstoreThread(new Socket(InetAddress.getLocalHost(), controllerPort));
             new Thread(datastoreThread).start();
             datastoreThread.joinController();
 
-            // thread for receiving new clients
+            // thread for establishing new connections to clients
             Thread socketThread = new Thread(() -> {
                 for (;;) {
                     try {
@@ -93,7 +91,7 @@ public class Dstore {
                         } catch (Exception e) {
                             datastoreLogger.log("Malformed store message from the client (" + line + ")");
                         }
-                    } else if (line.startsWith("LOAD_DATA ")) {
+                    } else if (line.startsWith("LOAD_DATA ")) { // load operation
                         boolean found = false;
                         try {
                             String fileName = line.split(" ")[1];
@@ -131,6 +129,17 @@ public class Dstore {
                         } catch (Exception e) {
                             datastoreLogger.log("Malformed remove message from the client (" + line + ")");
                         }
+                    } else if (line.equals("LIST")) { // list operation
+                        StringBuilder files = new StringBuilder();
+
+                        for (File file : Objects.requireNonNull(new File(fileFolder).listFiles())) {
+                            if (!(files.length() == 0)) {
+                                files.append(" ");
+                            }
+                            files.append(file.getName());
+                        }
+                        datastoreLogger.messageSent(socket, String.valueOf(files));
+                        out.println(files);
                     }
                 }
             } catch (Exception e) {

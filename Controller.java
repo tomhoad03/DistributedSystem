@@ -7,8 +7,10 @@ import java.net.Socket;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashSet;
 
+@SuppressWarnings({"BusyWait"})
 public class Controller {
     public static int controllerPort;
     public static int replicationFactor;
@@ -34,19 +36,15 @@ public class Controller {
             timeout = Integer.parseInt(args[2]); // timeout wait time
             rebalancePeriod = Integer.parseInt(args[3]); // rebalance wait time
 
-            controllerLogger = new ControllerLogger(Logger.LoggingType.ON_FILE_AND_TERMINAL);
-
-            // establish controller listener
             ServerSocket controllerSocket = new ServerSocket(controllerPort);
+            controllerLogger = new ControllerLogger(Logger.LoggingType./*ON_FILE_AND_TERMINAL*/ON_TERMINAL_ONLY);
 
-            // thread for receiving new clients or datastores
+            // thread for establishing new connections to clients or datastores
             Thread socketThread = new Thread(() -> {
                 for (;;) {
                     try {
-                        // establish connection to new client or datastore
                         final Socket clientSocket = controllerSocket.accept();
                         new Thread(new ControllerThread(clientSocket)).start();
-
                         Thread.sleep(refreshRate);
                     } catch (Exception e) {
                         controllerLogger.log("Socket error (" + e + ")");
@@ -55,7 +53,7 @@ public class Controller {
             });
             socketThread.start();
 
-            // thread to check if needs rebalancing
+            // thread to check if datastores need rebalancing
             Thread rebalanceThread = new Thread(() -> {
                 for (;;) {
                     try {
@@ -63,8 +61,7 @@ public class Controller {
                             inRebalance = true;
 
                             if (!inOperation) {
-                                System.out.println("Rebalancing");
-
+                                rebalanceOp();
                                 lastRebalance = LocalDateTime.now();
                                 inRebalance = false;
                             }
@@ -76,7 +73,6 @@ public class Controller {
                 }
             });
             rebalanceThread.start();
-
         } catch (Exception e) {
             controllerLogger.log("Server error (" + e + ")");
         }
@@ -97,63 +93,61 @@ public class Controller {
         public void run() {
             try {
                 String line;
-                while ((line = in.readLine()) != null) {
+                while ((line = in.readLine()) != null && !inRebalance) {
                     controllerLogger.messageReceived(socket, line);
-
                     for (;;) {
-                        if (line.equals("LIST")) {
+                        if (line.equals("LIST")) { // list operation
                             StringBuilder fileNames = new StringBuilder("LIST");
                             for (DatastoreFile datastoreFile : datastoreFiles) {
                                 fileNames.append(" ").append(datastoreFile.getFileName());
                             }
                             out.println(fileNames);
                             break;
-                        } else if (line.startsWith("STORE_ACK ")) {
+                        } else if (line.startsWith("STORE_ACK ")) { // receive store ack
                             acks++;
                             break;
-                        } else if (line.startsWith("REMOVE_ACK ")) {
+                        } else if (line.startsWith("REMOVE_ACK ")) { // receive remove ack
                             acks++;
                             break;
                         }
-                        if (!inOperation && !inRebalance) {
+                        if (!inOperation) {
                             inOperation = true;
-                            if (line.startsWith("RELOAD ")) {
+                            if (line.startsWith("RELOAD ")) { // reload operation
                                 loadOp(line.split(" ")[1]);
                             }
                             endpoint = 0;
                             acks = 0;
 
-                            if (line.startsWith("JOIN")) {
+                            if (line.startsWith("JOIN")) { // join operation
                                 try {
                                     int port = Integer.parseInt(line.split(" ")[1]);
                                     controllerLogger.dstoreJoined(socket, port);
-                                    datastores.add(new Datastore(port, true, new ArrayList<>()));
+                                    datastores.add(new Datastore(port, true, socket, new ArrayList<>()));
                                     inRebalance = true;
                                 } catch (Exception e) {
                                     controllerLogger.log("Malformed join message from datastore (" + line + ")");
                                 }
-                            } else if (datastores.size() < replicationFactor || datastores.size() == 0) {
+                            } else if (datastores.size() < replicationFactor || datastores.size() == 0) { // replication check
                                 controllerLogger.messageSent(socket, "ERROR_NOT_ENOUGH_DSTORES");
                                 out.println("ERROR_NOT_ENOUGH_DSTORES");
-                            } else if (line.startsWith("STORE ")) {
+                            } else if (line.startsWith("STORE ")) { // store operation
                                 try {
                                     storeOp(line.split(" ")[1], line.split(" ")[2]);
                                 } catch (Exception e) {
                                     controllerLogger.log("Malformed store message from datastore (" + line + ")");
                                 }
-                            } else if (line.startsWith("LOAD ")) {
+                            } else if (line.startsWith("LOAD ")) { // load operation
                                 try {
                                     loadOp(line.split(" ")[1]);
                                 } catch (Exception e) {
                                     controllerLogger.log("Malformed load message from datastore (" + line + ")");
                                 }
-                            } else if (line.startsWith("REMOVE")) {
+                            } else if (line.startsWith("REMOVE")) { // remove operation
                                 try {
                                     removeOp(line.split(" ")[1]);
                                 } catch (Exception e) {
                                     controllerLogger.log("Malformed remove message from datastore (" + line + ")");
                                 }
-
                             } else {
                                 controllerLogger.log("Malformed and unknown message from datastore (" + line + ")");
                             }
@@ -164,9 +158,13 @@ public class Controller {
                     inOperation = false;
                 }
             } catch (Exception e) {
-                controllerLogger.log("Operation error (" + e + ")");
-                inRebalance = true;
-                inOperation = false;
+                try {
+                    // dealing with disconnections
+                    controllerLogger.log("Operation error (" + e + ")");
+                    inRebalance = true;
+                    inOperation = false;
+                    socket.close();
+                } catch (Exception ignored) { }
             }
         }
 
@@ -195,19 +193,18 @@ public class Controller {
             controllerLogger.messageSent(socket, String.valueOf(ports));
             out.println(ports);
 
-            // waiting for acks
+            // waiting for store acks
             LocalDateTime timeoutEnd = LocalDateTime.now().plus(timeout, ChronoUnit.MILLIS);
             for (;;) {
                 LocalDateTime now = LocalDateTime.now();
                 if (!now.isAfter(timeoutEnd)) {
-                    // successful store
                     if (acks == replicationFactor) {
                         controllerLogger.messageSent(socket, "STORE_COMPLETE");
                         out.println("STORE_COMPLETE");
                         break;
                     }
                 } else {
-                    controllerLogger.log("Store acks error (not all acks received)");
+                    controllerLogger.log("Not all store acks received");
                     break;
                 }
             }
@@ -222,9 +219,8 @@ public class Controller {
 
         // load operation
         public void loadOp(String fileName) {
-            // checks if the file exists
+            // checks if the file is already stored
             boolean found = false;
-
             for (DatastoreFile datastoreFile : datastoreFiles) {
                 if (datastoreFile.getFileName().equals(fileName)) {
                     found = true;
@@ -260,7 +256,7 @@ public class Controller {
 
         // remove operation
         public void removeOp(String fileName) throws Exception {
-            // checks if the file is in the index
+            // checks if the file is already stored
             boolean found = false;
             for (DatastoreFile datastoreFile : datastoreFiles) {
                 if (datastoreFile.getFileName().equals(fileName)) {
@@ -286,14 +282,12 @@ public class Controller {
                 }
             }
 
-            // waiting for acks
+            // waiting for remove acks
             LocalDateTime timeoutEnd = LocalDateTime.now().plus(timeout, ChronoUnit.MILLIS);
             for (;;) {
                 LocalDateTime now = LocalDateTime.now();
                 if (!now.isAfter(timeoutEnd)) {
-                    // successful store
                     if (acks == replicationFactor) {
-                        // removing the filename reference
                         for (Datastore datastore : datastores) {
                             if (datastore.getFileNames().contains(fileName)) {
                                 datastore.removeFileName(fileName);
@@ -305,11 +299,56 @@ public class Controller {
                         break;
                     }
                 } else {
-                    controllerLogger.log("Remove acks error (not all acks received)");
+                    controllerLogger.log("Not all remove acks received");
                     break;
                 }
             }
             datastoreFiles.removeIf(datastoreFile -> datastoreFile.getFileName().equals(fileName));
         }
     }
+
+    public static void rebalanceOp() throws Exception {
+        controllerLogger.log("Rebalancing");
+
+        // removes any datastores that may have disconnected
+        ArrayList<Datastore> toRemove = new ArrayList<>();
+        for (Datastore datastore : datastores) {
+            if (datastore.getSocket().isClosed()) {
+                toRemove.add(datastore);
+            }
+        }
+        for (Datastore datastore : toRemove) {
+            datastores.remove(datastore);
+        }
+
+        // gets updated list of files from the datastores
+        for (Datastore datastore : datastores) {
+            Socket rebalanceSocket = new Socket(InetAddress.getLocalHost(), datastore.getPort());
+            BufferedReader datastoreIn = new BufferedReader(new InputStreamReader(rebalanceSocket.getInputStream()));
+            PrintWriter datastoreOut = new PrintWriter(rebalanceSocket.getOutputStream(), true);
+
+            controllerLogger.messageSent(datastore.getSocket(), "LIST");
+            datastoreOut.println("LIST");
+
+            String fileList = datastoreIn.readLine();
+            controllerLogger.messageReceived(datastore.getSocket(), fileList);
+            datastore.setFileNames(fileList.split(" "));
+
+            rebalanceSocket.close();
+            datastoreIn.close();
+            datastoreOut.close();
+        }
+    }
 }
+
+/*
+1. javac Controller.java
+2. java Controller 6000 1 10000 10000
+
+3. javac Dstore.java
+4a. java Dstore 6100 6000 10000 Files1
+4b. run as many additional dstores as needed
+
+5. javac -cp client-1.0.2.jar ClientMain.java
+6. java -cp client-1.0.2.jar;. ClientMain 6000 1000
+ */
