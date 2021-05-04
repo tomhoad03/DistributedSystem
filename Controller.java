@@ -7,7 +7,7 @@ import java.net.Socket;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
-import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashSet;
 
 @SuppressWarnings({"BusyWait"})
@@ -69,6 +69,8 @@ public class Controller {
                         Thread.sleep(refreshRate);
                     } catch (Exception e) {
                         controllerLogger.log("Rebalance error (" + e + ")");
+                        lastRebalance = LocalDateTime.now();
+                        inRebalance = false;
                     }
                 }
             });
@@ -101,6 +103,7 @@ public class Controller {
                             for (DatastoreFile datastoreFile : datastoreFiles) {
                                 fileNames.append(" ").append(datastoreFile.getFileName());
                             }
+                            controllerLogger.messageSent(socket, String.valueOf(fileNames));
                             out.println(fileNames);
                             break;
                         } else if (line.startsWith("STORE_ACK ")) { // receive store ack
@@ -122,7 +125,7 @@ public class Controller {
                                 try {
                                     int port = Integer.parseInt(line.split(" ")[1]);
                                     controllerLogger.dstoreJoined(socket, port);
-                                    datastores.add(new Datastore(port, true, socket, new ArrayList<>()));
+                                    datastores.add(new Datastore(port, true, socket, new HashSet<>()));
                                     inRebalance = true;
                                 } catch (Exception e) {
                                     controllerLogger.log("Malformed join message from datastore (" + line + ")");
@@ -308,16 +311,16 @@ public class Controller {
     }
 
     public static void rebalanceOp() throws Exception {
-        controllerLogger.log("Rebalancing");
+        controllerLogger.log("Rebalance Operation");
 
         // removes any datastores that may have disconnected
-        ArrayList<Datastore> toRemove = new ArrayList<>();
+        ArrayList<Datastore> toRemove1 = new ArrayList<>();
         for (Datastore datastore : datastores) {
             if (datastore.getSocket().isClosed()) {
-                toRemove.add(datastore);
+                toRemove1.add(datastore);
             }
         }
-        for (Datastore datastore : toRemove) {
+        for (Datastore datastore : toRemove1) {
             datastores.remove(datastore);
         }
 
@@ -332,11 +335,92 @@ public class Controller {
 
             String fileList = datastoreIn.readLine();
             controllerLogger.messageReceived(datastore.getSocket(), fileList);
+
             datastore.setFileNames(fileList.split(" "));
+            datastore.newRebalance();
 
             rebalanceSocket.close();
             datastoreIn.close();
             datastoreOut.close();
+        }
+
+        // updates the list of all known files
+        for (Datastore datastore : datastores) {
+            for (String fileName : datastore.getFileNames()) {
+                boolean found = false;
+                for (DatastoreFile datastoreFile : datastoreFiles) {
+                    if (datastoreFile.getFileName().equals(fileName)) {
+                        datastoreFile.setFound(true);
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    // controllerLogger.log("Unknown file (" + fileName + ") found");
+                }
+            }
+        }
+        ArrayList<DatastoreFile> toRemove2 = new ArrayList<>();
+        for (DatastoreFile datastoreFile : datastoreFiles) {
+            if (datastoreFile.isFound()) {
+                datastoreFile.setFound(false);
+            } else {
+                toRemove2.add(datastoreFile);
+            }
+        }
+        for (DatastoreFile datastoreFile : toRemove2) {
+            datastoreFiles.remove(datastoreFile);
+        }
+
+        // bin packing the datastores
+        for (DatastoreFile datastoreFile : datastoreFiles) {
+            String fileName = datastoreFile.getFileName();
+            int sourcePort = 0;
+
+            // finds the source datastores for each file
+            for (Datastore datastore : datastores) {
+                if (datastore.getFileNames().contains(fileName)) {
+                    datastore.newSend(fileName);
+                    sourcePort = datastore.getPort();
+                    break;
+                }
+            }
+            Collections.sort(datastores);
+
+            // determines the destinations
+            try {
+                int n = replicationFactor;
+                for (int i = 0; i < n && i < datastores.size(); i++) {
+                    Datastore datastore = datastores.get(i);
+
+                    if (datastore.containsSendFile(fileName)) {
+                        n++;
+                    } else if (datastore.getFileNames().contains(fileName)) {
+                        datastore.newKeep(fileName);
+                    } else {
+                        datastore.newReceive();
+
+                        for (Datastore source : datastores) {
+                            if (source.getPort() == sourcePort) {
+                                for (RebalanceFile rebalanceFile : source.getSendFiles()) {
+                                    rebalanceFile.addDestinationPort(datastore.getPort());
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                controllerLogger.log("Error: " + e);
+            }
+        }
+
+        // send the rebalance messages to each datastore
+        for (Datastore datastore : datastores) {
+            Socket rebalanceSocket = new Socket(InetAddress.getLocalHost(), datastore.getPort());
+            PrintWriter datastoreOut = new PrintWriter(rebalanceSocket.getOutputStream(), true);
+
+            controllerLogger.messageSent(datastore.getSocket(), datastore.finishRebalance());
+            datastoreOut.println(datastore.finishRebalance());
         }
     }
 }
@@ -344,7 +428,6 @@ public class Controller {
 /*
 1. javac Controller.java
 2. java Controller 6000 1 10000 10000
-
 3. javac Dstore.java
 4a. java Dstore 6100 6000 10000 Files1
 4b. run as many additional dstores as needed
