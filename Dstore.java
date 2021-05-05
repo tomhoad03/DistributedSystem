@@ -3,6 +3,8 @@ import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.file.Files;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Objects;
 
 public class Dstore {
@@ -98,6 +100,7 @@ public class Dstore {
 
                             for (File file : Objects.requireNonNull(new File(fileFolder).listFiles())) {
                                 if (file.getName().equals(fileName)) {
+                                    datastoreLogger.messageSent(socket, Arrays.toString(Files.readAllBytes(file.toPath())));
                                     socket.getOutputStream().write(Files.readAllBytes(file.toPath()));
                                     found = true;
                                     break;
@@ -140,6 +143,61 @@ public class Dstore {
                         }
                         datastoreLogger.messageSent(socket, String.valueOf(files));
                         out.println(files);
+                    } else if (line.startsWith("REBALANCE ")) {
+                        ArrayList<String> splitLine = new ArrayList<>(Arrays.asList(line.split(" ")));
+                        int numSends = Integer.parseInt(splitLine.get(1));
+                        int count = 2;
+
+                        // file sending
+                        for (int i = 0; i <= numSends - 1; i++) {
+                            String fileName = splitLine.get(count);
+                            int numPorts = Integer.parseInt(splitLine.get(count + 1));
+                            ArrayList<String> ports = new ArrayList<>(splitLine.subList(count + 2, count + numPorts + 2));
+
+                            // send file to ports
+                            for (String port : ports) {
+                                Socket datastoreSocket = new Socket(InetAddress.getLocalHost(), Integer.parseInt(port));
+                                BufferedReader datastoreIn = new BufferedReader(new InputStreamReader(datastoreSocket.getInputStream()));
+                                PrintWriter datastoreOut = new PrintWriter(datastoreSocket.getOutputStream(), true);
+
+                                for (File file : Objects.requireNonNull(new File(fileFolder).listFiles())) {
+                                    if (file.getName().equals(fileName)) {
+                                        datastoreLogger.messageSent(socket, "STORE " + fileName + " " + file.length());
+                                        datastoreOut.println("STORE " + fileName + " " + file.length());
+
+                                        String datastoreLine;
+                                        while ((datastoreLine = datastoreIn.readLine()) != null) {
+                                            datastoreLogger.messageReceived(socket, datastoreLine);
+
+                                            if (datastoreLine.equals("ACK")) {
+                                                datastoreLogger.messageSent(socket, Arrays.toString(Files.readAllBytes(file.toPath())));
+                                                datastoreSocket.getOutputStream().write(Files.readAllBytes(file.toPath()));
+                                                break;
+                                            }
+                                        }
+                                        break;
+                                    }
+                                }
+                                datastoreSocket.close();
+                            }
+                            count = count + numPorts + 2;
+                        }
+
+                        // file removing
+                        if (Integer.parseInt(splitLine.get(count)) > 0) {
+                            ArrayList<String> toRemove = new ArrayList<>(splitLine.subList(count + 1, splitLine.size()));
+
+                            for (String fileName : toRemove) {
+                                for (File file : Objects.requireNonNull(new File(fileFolder).listFiles())) {
+                                    if (file.getName().equals(fileName)) {
+                                        Files.delete(file.toPath());
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        datastoreLogger.messageSent(socket,"REBALANCE COMPLETE");
+                        out.println("REBALANCE COMPLETE");
                     }
                 }
             } catch (Exception e) {

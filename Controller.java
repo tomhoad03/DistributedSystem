@@ -4,6 +4,7 @@ import java.io.PrintWriter;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.SocketTimeoutException;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -62,8 +63,6 @@ public class Controller {
 
                             if (!inOperation) {
                                 rebalanceOp();
-                                lastRebalance = LocalDateTime.now();
-                                inRebalance = false;
                             }
                         }
                         Thread.sleep(refreshRate);
@@ -413,15 +412,31 @@ public class Controller {
                 controllerLogger.log("Error: " + e);
             }
         }
+        boolean redo = false;
 
         // send the rebalance messages to each datastore
         for (Datastore datastore : datastores) {
             Socket rebalanceSocket = new Socket(InetAddress.getLocalHost(), datastore.getPort());
+            BufferedReader datastoreIn = new BufferedReader(new InputStreamReader(rebalanceSocket.getInputStream()));
             PrintWriter datastoreOut = new PrintWriter(rebalanceSocket.getOutputStream(), true);
 
             controllerLogger.messageSent(datastore.getSocket(), datastore.finishRebalance());
             datastoreOut.println(datastore.finishRebalance());
+
+            rebalanceSocket.setSoTimeout(timeout);
+
+            try {
+                String datastoreLine;
+                while ((datastoreLine = datastoreIn.readLine()) != null) {
+                    controllerLogger.messageReceived(rebalanceSocket, datastoreLine);
+                }
+            } catch (SocketTimeoutException e) {
+                redo = true;
+                break;
+            }
         }
+        inRebalance = redo;
+        lastRebalance = LocalDateTime.now();
     }
 }
 
