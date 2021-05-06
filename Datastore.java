@@ -1,9 +1,8 @@
 import java.net.Socket;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 
-public class Datastore implements Comparable {
+public class Datastore {
     private int port;
     private boolean index;
     private Socket socket;
@@ -93,6 +92,10 @@ public class Datastore implements Comparable {
         return removeFiles;
     }
 
+    public void removeRemoveFile(String removeFile) {
+        removeFiles.remove(removeFile);
+    }
+
     public boolean containsSendFile(String fileName) {
         for (RebalanceFile sendFile : sendFiles) {
             if (sendFile.getFileName().equals(fileName)) {
@@ -157,10 +160,5 @@ public class Datastore implements Comparable {
             portsMsg.append(" ").append(removeFile);
         }
         return "REBALANCE" + " " + sendCount + portsMsg;
-    }
-
-    @Override
-    public int compareTo(Object datastore) {
-        return (this.rebalanceCount - ((Datastore) datastore).getRebalanceCount());
     }
 }

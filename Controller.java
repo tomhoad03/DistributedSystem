@@ -8,7 +8,7 @@ import java.net.SocketTimeoutException;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
-import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashSet;
 
 @SuppressWarnings({"BusyWait"})
@@ -23,6 +23,7 @@ public class Controller {
     public static int refreshRate = 2;
     public static boolean inRebalance = false;
     public static boolean inOperation = false;
+
     public static ControllerLogger controllerLogger;
     public static LocalDateTime lastRebalance = LocalDateTime.now();
 
@@ -60,7 +61,6 @@ public class Controller {
                     try {
                         if (LocalDateTime.now().isAfter(lastRebalance.plus(rebalancePeriod, ChronoUnit.MILLIS)) || inRebalance) {
                             inRebalance = true;
-
                             if (!inOperation) {
                                 rebalanceOp();
                             }
@@ -94,10 +94,10 @@ public class Controller {
         public void run() {
             try {
                 String line;
-                while ((line = in.readLine()) != null && !inRebalance) {
-                    controllerLogger.messageReceived(socket, line);
+                while ((line = in.readLine()) != null) {
                     for (;;) {
                         if (line.equals("LIST")) { // list operation
+                            controllerLogger.messageReceived(socket, line);
                             StringBuilder fileNames = new StringBuilder("LIST");
                             for (DatastoreFile datastoreFile : datastoreFiles) {
                                 fileNames.append(" ").append(datastoreFile.getFileName());
@@ -106,12 +106,19 @@ public class Controller {
                             out.println(fileNames);
                             break;
                         } else if (line.startsWith("STORE_ACK ")) { // receive store ack
-                            acks++;
+                            if (!inRebalance) {
+                                controllerLogger.messageReceived(socket, line);
+                                acks++;
+                            }
                             break;
                         } else if (line.startsWith("REMOVE_ACK ")) { // receive remove ack
-                            acks++;
+                            if (!inRebalance) {
+                                controllerLogger.messageReceived(socket, line);
+                                acks++;
+                            }
                             break;
                         }
+                        controllerLogger.messageReceived(socket, line);
                         if (!inOperation) {
                             inOperation = true;
                             if (line.startsWith("RELOAD ")) { // reload operation
@@ -180,9 +187,12 @@ public class Controller {
                     return;
                 }
             }
-            StringBuilder ports = new StringBuilder("STORE_TO");
 
             // gets the datastore ports
+            StringBuilder ports = new StringBuilder("STORE_TO");
+            Comparator<Object> byNumFiles = Comparator.comparingInt(datastore -> ((Datastore) datastore).getFileNames().size());
+            datastores.sort(byNumFiles);
+
             for (int i = 0; i < replicationFactor; i++) {
                 Datastore datastore = datastores.get(i);
 
@@ -244,7 +254,7 @@ public class Controller {
                             endpoint = currentEndpoint;
                             controllerLogger.messageSent(socket, "LOAD_FROM " + dstore.getPort() + " " + datastoreFile.getFileSize());
                             out.println("LOAD_FROM " + dstore.getPort() + " " + datastoreFile.getFileSize());
-                            break;
+                            return;
                         }
                     }
                 } else if (currentEndpoint < datastores.size()) {
@@ -310,7 +320,7 @@ public class Controller {
     }
 
     public static void rebalanceOp() throws Exception {
-        controllerLogger.log("Rebalance Operation");
+        inRebalance = true;
 
         // removes any datastores that may have disconnected
         ArrayList<Datastore> toRemove1 = new ArrayList<>();
@@ -346,16 +356,11 @@ public class Controller {
         // updates the list of all known files
         for (Datastore datastore : datastores) {
             for (String fileName : datastore.getFileNames()) {
-                boolean found = false;
                 for (DatastoreFile datastoreFile : datastoreFiles) {
                     if (datastoreFile.getFileName().equals(fileName)) {
                         datastoreFile.setFound(true);
-                        found = true;
                         break;
                     }
-                }
-                if (!found) {
-                    // controllerLogger.log("Unknown file (" + fileName + ") found");
                 }
             }
         }
@@ -371,45 +376,80 @@ public class Controller {
             datastoreFiles.remove(datastoreFile);
         }
 
-        // bin packing the datastores
-        for (DatastoreFile datastoreFile : datastoreFiles) {
-            String fileName = datastoreFile.getFileName();
-            int sourcePort = 0;
+        // check if he datastores are already balanced
+        boolean balanced = true;
+        int minSize = Integer.MAX_VALUE;
+        int maxSize = 0;
 
-            // finds the source datastores for each file
+        for (Datastore datastore : datastores) {
+            if (datastore.getFileNames().size() > maxSize) {
+                maxSize = datastore.getFileNames().size();
+            }
+            if (datastore.getFileNames().size() < minSize) {
+                minSize = datastore.getFileNames().size();
+            }
+        }
+        if (Math.abs(maxSize - minSize) > 1) {
+            balanced = false;
+        }
+        for (DatastoreFile datastoreFile : datastoreFiles) {
+            int replicationCount = 0;
+
             for (Datastore datastore : datastores) {
-                if (datastore.getFileNames().contains(fileName)) {
-                    datastore.newSend(fileName);
-                    sourcePort = datastore.getPort();
-                    break;
+                if (datastore.getFileNames().contains(datastoreFile.getFileName())) {
+                    replicationCount++;
                 }
             }
-            Collections.sort(datastores);
+            if (replicationCount != replicationFactor || !balanced) {
+                balanced = false;
+                break;
+            }
+        }
 
-            // determines the destinations
-            try {
-                int n = replicationFactor;
-                for (int i = 0; i < (n - 1) && i < datastores.size(); i++) {
-                    Datastore datastore = datastores.get(i);
+        // bin packing the datastores
+        if (!balanced) {
+            for (DatastoreFile datastoreFile : datastoreFiles) {
+                String fileName = datastoreFile.getFileName();
+                int sourcePort = 0;
 
-                    if (datastore.containsSendFile(fileName)) {
-                        n++;
-                    } else if (datastore.getFileNames().contains(fileName)) {
-                        datastore.newKeep(fileName);
-                    } else {
-                        datastore.newReceive();
+                // finds the source datastores for each file
+                for (Datastore datastore : datastores) {
+                    if (datastore.getFileNames().contains(fileName)) {
+                        datastore.newSend(fileName);
+                        sourcePort = datastore.getPort();
+                        break;
+                    }
+                }
+                Comparator<Object> byRebalanceCount = Comparator.comparingInt(datastore -> ((Datastore) datastore).getRebalanceCount());
+                datastores.sort(byRebalanceCount);
 
-                        for (Datastore source : datastores) {
-                            if (source.getPort() == sourcePort) {
-                                for (RebalanceFile rebalanceFile : source.getSendFiles()) {
-                                    rebalanceFile.addDestinationPort(datastore.getPort());
+                // determines the destinations
+                try {
+                    for (int i = 0; i < (replicationFactor - 1) && i < datastores.size(); i++) {
+                        Datastore datastore = datastores.get(i);
+
+                        if (datastore.containsSendFile(fileName)) {
+                            i++;
+                        } else if (datastore.getFileNames().contains(fileName)) {
+                            datastore.newKeep(fileName);
+                            i++;
+                        } else {
+                            datastore.newReceive();
+
+                            for (Datastore source : datastores) {
+                                if (source.getPort() == sourcePort) {
+                                    for (RebalanceFile rebalanceFile : source.getSendFiles()) {
+                                        if (rebalanceFile.getFileName().equals(fileName)) {
+                                            rebalanceFile.addDestinationPort(datastore.getPort());
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
+                } catch (Exception e) {
+                    controllerLogger.log("Error: " + e);
                 }
-            } catch (Exception e) {
-                controllerLogger.log("Error: " + e);
             }
         }
         boolean redo = false;
@@ -420,15 +460,22 @@ public class Controller {
             BufferedReader datastoreIn = new BufferedReader(new InputStreamReader(rebalanceSocket.getInputStream()));
             PrintWriter datastoreOut = new PrintWriter(rebalanceSocket.getOutputStream(), true);
 
-            controllerLogger.messageSent(datastore.getSocket(), datastore.finishRebalance());
-            datastoreOut.println(datastore.finishRebalance());
+            if (!balanced) {
+                String rebalanced = datastore.finishRebalance();
+                controllerLogger.messageSent(datastore.getSocket(), rebalanced);
+                datastoreOut.println(rebalanced);
+            } else {
+                controllerLogger.messageSent(datastore.getSocket(), "REBALANCE 0 0");
+                datastoreOut.println("REBALANCE 0 0");
+            }
 
             rebalanceSocket.setSoTimeout(timeout);
 
             try {
-                String datastoreLine;
-                while ((datastoreLine = datastoreIn.readLine()) != null) {
-                    controllerLogger.messageReceived(rebalanceSocket, datastoreLine);
+                String datastoreLine = datastoreIn.readLine();
+                controllerLogger.messageReceived(rebalanceSocket, datastoreLine);
+                if (!datastoreLine.equals("REBALANCE COMPLETE")) {
+                    throw new SocketTimeoutException();
                 }
             } catch (SocketTimeoutException e) {
                 redo = true;
@@ -448,6 +495,15 @@ public class Controller {
 4a. java Dstore 6100 6000 10000 Files1
 4b. run as many additional dstores as needed
 
+5. javac Datastore.java
+6. javac DatastoreFile.java
+7. javac RebalanceFile.java
+8. javac ClientTest.java
+
 5. javac -cp client-1.0.2.jar ClientMain.java
 6. java -cp client-1.0.2.jar;. ClientMain 6000 1000
+
+To do:
+1. Fix rebalancing (being done when not needed, and over replicating files)
+2. More commenting
  */

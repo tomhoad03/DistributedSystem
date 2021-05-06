@@ -14,13 +14,14 @@ public class Dstore {
     public static String fileFolder;
 
     public static int refreshRate = 2;
+    public static boolean inRebalance = false;
     public static DstoreThread datastoreThread;
     public static DstoreLogger datastoreLogger;
 
     public static void main(String[] args) {
         try {
             // reading arguments
-            datastorePort = Integer.parseInt(args[0]); // port to listen on
+            datastorePort = Integer.parseInt(args[0]); // port to listen on/
             controllerPort = Integer.parseInt(args[1]); // controller port
             timeout = Integer.parseInt(args[2]); // timeout wait time
             fileFolder = args[3]; // location of data store
@@ -86,7 +87,8 @@ public class Dstore {
                             Files.write(file.toPath(), fileContents);
 
                             // send ack to controller
-                            if (socket.getPort() == datastorePort || socket.getLocalPort() == datastorePort) {
+                            datastoreLogger.log(String.valueOf(inRebalance));
+                            if (socket.getPort() == datastorePort || socket.getLocalPort() == datastorePort && !inRebalance) {
                                 datastoreLogger.messageSent(datastoreThread.socket, "STORE_ACK " + fileName);
                                 datastoreThread.out.println("STORE_ACK " + fileName);
                             }
@@ -146,6 +148,7 @@ public class Dstore {
                     } else if (line.startsWith("REBALANCE ")) {
                         ArrayList<String> splitLine = new ArrayList<>(Arrays.asList(line.split(" ")));
                         int numSends = Integer.parseInt(splitLine.get(1));
+                        inRebalance = true;
                         int count = 2;
 
                         // file sending
@@ -198,10 +201,12 @@ public class Dstore {
                         }
                         datastoreLogger.messageSent(socket,"REBALANCE COMPLETE");
                         out.println("REBALANCE COMPLETE");
+                        inRebalance = false;
                     }
                 }
             } catch (Exception e) {
                 datastoreLogger.log("Operation error (" + e + ")");
+                inRebalance = false;
             }
         }
 
