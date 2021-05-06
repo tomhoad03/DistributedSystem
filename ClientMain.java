@@ -5,27 +5,29 @@ import java.util.Random;
 public class ClientMain {
 	
 	public static void main(String[] args) throws Exception {
-		
-		final int cport = Integer.parseInt(args[0]);
-		int timeout = Integer.parseInt(args[1]);
+		try {
+			final int cport = Integer.parseInt(args[0]);
+			int timeout = Integer.parseInt(args[1]);
 			
-		File downloadFolder = new File("DownloadFiles");
-		if (!downloadFolder.exists())
-			if (!downloadFolder.mkdir()) throw new RuntimeException("Cannot create download folder (folder absolute path: " + downloadFolder.getAbsolutePath() + ")");
+			File downloadFolder = new File("DownloadFiles");
+			if (!downloadFolder.exists())
+				if (!downloadFolder.mkdir()) throw new RuntimeException("Cannot create download folder (folder absolute path: " + downloadFolder.getAbsolutePath() + ")");
 		
-		File uploadFolder = new File("UploadFiles");
-		if (!uploadFolder.exists())
-			throw new RuntimeException("to_store folder does not exist");
+			File uploadFolder = new File("UploadFiles");
+			if (!uploadFolder.exists())
+				throw new RuntimeException("to_store folder does not exist");
 		
-		//testClient(cport, timeout, downloadFolder);
+			//testClient(cport, timeout, downloadFolder);
 		
-		// example to launch a number of concurrent clients, each doing the same operations
-		for (int i = 0; i < 10; i++) {
-			//new Thread(() -> test2Client(cport, timeout, downloadFolder, uploadFolder)).start();
+			// example to launch a number of concurrent clients, each doing the same operations
+			for (int i = 0; i < 10; i++) {
+				new Thread(() -> test2Client(cport, timeout, downloadFolder, uploadFolder)).start();
+			}
+		} catch (Exception e) {
+			System.out.println(e);
 		}
 	}
 
-	/*
 	public static void test2Client(int cport, int timeout, File downloadFolder, File uploadFolder) {
 		Client client = null;
 		
@@ -96,7 +98,6 @@ public class ClientMain {
 			try { client.remove(list[0]); } catch(IOException e) { e.printStackTrace(); }
 			
 			try { list(client); } catch(IOException e) { e.printStackTrace(); }*/
-			/*
 		} finally {
 			if (client != null)
 				try { client.disconnect(); } catch(Exception e) { e.printStackTrace(); }
@@ -114,5 +115,4 @@ public class ClientMain {
 		
 		return list;
 	}
-	*/
 }

@@ -24,14 +24,14 @@ class ClientTest {
             out = new PrintWriter(socket.getOutputStream(), true);
 
             // storing
-            File downloadFolder = new File("src/UploadFiles");
+            File downloadFolder = new File("UploadFiles");
             File[] downloadFiles = downloadFolder.listFiles();
             if (downloadFiles != null) {
                 for (File downloadFile : downloadFiles) {
                     testStore(downloadFile);
                 }
             }
-
+            
             // loading
             if (downloadFiles != null) {
                 for (File downloadFile : downloadFiles) {
@@ -45,7 +45,7 @@ class ClientTest {
             // removing
             if (downloadFiles != null) {
                 for (File downloadFile : downloadFiles) {
-                    // testRemove(downloadFile);
+                    testRemove(downloadFile);
                 }
             }
             socket.close();
@@ -116,7 +116,7 @@ class ClientTest {
                         break;
                     }
                     Random rand = new Random();
-                    File newFile = new File("src/DownloadFiles/test" + (rand.nextInt(999) + 6) + ".txt");
+                    File newFile = new File("DownloadFiles/test" + (rand.nextInt(999) + 6) + ".txt");
                     Files.write(newFile.toPath(), Arrays.copyOfRange(contents, 0, Integer.parseInt(fileSize)));
                     dataSocket.close();
                     break;
