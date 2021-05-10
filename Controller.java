@@ -20,6 +20,7 @@ public class Controller {
     public static int acks = 0;
     public static int endpoint = 0;
     public static int refreshRate = 2;
+    public static boolean toRebalance = false;
     public static boolean inRebalance = false;
     public static boolean inOperation = false;
     public static LocalDateTime lastRebalance = LocalDateTime.now();
@@ -56,9 +57,8 @@ public class Controller {
             Thread rebalanceThread = new Thread(() -> {
                 for (;;) {
                     try {
-                        if (LocalDateTime.now().isAfter(lastRebalance.plus(rebalancePeriod, ChronoUnit.MILLIS)) || inRebalance) {
-                            inRebalance = true;
-                            if (!inOperation) {
+                        if (LocalDateTime.now().isAfter(lastRebalance.plus(rebalancePeriod, ChronoUnit.MILLIS)) || toRebalance) {
+                            if (!inOperation && !inRebalance) {
                                 rebalanceOp();
                             }
                         }
@@ -67,6 +67,7 @@ public class Controller {
                         ControllerLogger.getInstance().log("Rebalance error (" + e + ")");
                         lastRebalance = LocalDateTime.now();
                         inRebalance = false;
+                        toRebalance = false;
                     }
                 }
             });
@@ -129,7 +130,7 @@ public class Controller {
                                     int port = Integer.parseInt(line.split(" ")[1]);
                                     ControllerLogger.getInstance().dstoreJoined(socket, port);
                                     datastores.add(new Datastore(port, true, socket, new HashSet<>()));
-                                    inRebalance = true;
+                                    toRebalance = true;
                                 } catch (Exception e) {
                                     ControllerLogger.getInstance().log("Malformed join message from datastore (" + line + ")");
                                 }
@@ -167,8 +168,9 @@ public class Controller {
                 try {
                     // dealing with disconnections
                     ControllerLogger.getInstance().log("Operation error (" + e + ")");
-                    inRebalance = true;
                     inOperation = false;
+                    inRebalance = false;
+                    toRebalance = false;
                     socket.close();
                 } catch (Exception ignored) { }
             }
@@ -479,7 +481,8 @@ public class Controller {
                 break;
             }
         }
-        inRebalance = redo;
+        inRebalance = false;
+        toRebalance = redo;
         lastRebalance = LocalDateTime.now();
     }
 }
