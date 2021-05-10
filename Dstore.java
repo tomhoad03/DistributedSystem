@@ -15,8 +15,8 @@ public class Dstore {
 
     public static int refreshRate = 2;
     public static boolean inRebalance = false;
+
     public static DstoreThread datastoreThread;
-    public static DstoreLogger datastoreLogger;
 
     public static void main(String[] args) {
         try {
@@ -27,7 +27,7 @@ public class Dstore {
             fileFolder = args[3]; // location of data store
 
             ServerSocket datastoreSocket = new ServerSocket(datastorePort);
-            datastoreLogger = new DstoreLogger(Logger.LoggingType./*ON_FILE_AND_TERMINAL*/ON_TERMINAL_ONLY, datastorePort);
+            DstoreLogger.init(Logger.LoggingType.ON_FILE_AND_TERMINAL, datastorePort);
 
             // establish connection to controller
             datastoreThread = new DstoreThread(new Socket(InetAddress.getLocalHost(), controllerPort));
@@ -44,13 +44,13 @@ public class Dstore {
 
                         Thread.sleep(refreshRate);
                     } catch (Exception e) {
-                        datastoreLogger.log("Socket error (" + e + ")");
+                        DstoreLogger.getInstance().log("Socket error (" + e + ")");
                     }
                 }
             });
             socketThread.start();
         } catch (Exception e) {
-            datastoreLogger.log("Server error (" + e + ")");
+            DstoreLogger.getInstance().log("Server error (" + e + ")");
         }
     }
 
@@ -69,7 +69,7 @@ public class Dstore {
             try {
                 String line;
                 while ((line = in.readLine()) != null) {
-                    datastoreLogger.messageReceived(socket, line);
+                    DstoreLogger.getInstance().messageReceived(socket, line);
 
                     if (line.startsWith("STORE ")) { // store operation
                         try {
@@ -77,7 +77,7 @@ public class Dstore {
                             String fileSize = line.split(" ")[2];
 
                             // send ack to client and get file contents
-                            datastoreLogger.messageSent(socket, "ACK");
+                            DstoreLogger.getInstance().messageSent(socket, "ACK");
                             out.println("ACK");
 
                             byte[] fileContents = socket.getInputStream().readNBytes(Integer.parseInt(fileSize));
@@ -87,13 +87,13 @@ public class Dstore {
                             Files.write(file.toPath(), fileContents);
 
                             // send ack to controller
-                            datastoreLogger.log(String.valueOf(inRebalance));
+                            DstoreLogger.getInstance().log(String.valueOf(inRebalance));
                             if (socket.getPort() == datastorePort || socket.getLocalPort() == datastorePort && !inRebalance) {
-                                datastoreLogger.messageSent(datastoreThread.socket, "STORE_ACK " + fileName);
+                                DstoreLogger.getInstance().messageSent(datastoreThread.socket, "STORE_ACK " + fileName);
                                 datastoreThread.out.println("STORE_ACK " + fileName);
                             }
                         } catch (Exception e) {
-                            datastoreLogger.log("Malformed store message from the client (" + line + ")");
+                            DstoreLogger.getInstance().log("Malformed store message from the client (" + line + ")");
                         }
                     } else if (line.startsWith("LOAD_DATA ")) { // load operation
                         boolean found = false;
@@ -102,17 +102,17 @@ public class Dstore {
 
                             for (File file : Objects.requireNonNull(new File(fileFolder).listFiles())) {
                                 if (file.getName().equals(fileName)) {
-                                    datastoreLogger.messageSent(socket, Arrays.toString(Files.readAllBytes(file.toPath())));
+                                    DstoreLogger.getInstance().messageSent(socket, Arrays.toString(Files.readAllBytes(file.toPath())));
                                     socket.getOutputStream().write(Files.readAllBytes(file.toPath()));
                                     found = true;
                                     break;
                                 }
                             }
                         } catch (Exception e) {
-                            datastoreLogger.log("Malformed load message from the client (" + line + ")");
+                            DstoreLogger.getInstance().log("Malformed load message from the client (" + line + ")");
                         }
                         if (!found) {
-                            datastoreLogger.messageSent(datastoreThread.socket, "ERROR_FILE_DOES_NOT_EXIST");
+                            DstoreLogger.getInstance().messageSent(datastoreThread.socket, "ERROR_FILE_DOES_NOT_EXIST");
                             out.println("ERROR_FILE_DOES_NOT_EXIST");
                         }
                     } else if (line.startsWith("REMOVE ")) {
@@ -128,11 +128,11 @@ public class Dstore {
                                 }
                             }
                             if (found) {
-                                datastoreLogger.messageSent(datastoreThread.socket, "REMOVE_ACK " + fileName);
+                                DstoreLogger.getInstance().messageSent(datastoreThread.socket, "REMOVE_ACK " + fileName);
                                 datastoreThread.out.println("REMOVE_ACK " + fileName);
                             }
                         } catch (Exception e) {
-                            datastoreLogger.log("Malformed remove message from the client (" + line + ")");
+                            DstoreLogger.getInstance().log("Malformed remove message from the client (" + line + ")");
                         }
                     } else if (line.equals("LIST")) { // list operation
                         StringBuilder files = new StringBuilder();
@@ -143,7 +143,7 @@ public class Dstore {
                             }
                             files.append(file.getName());
                         }
-                        datastoreLogger.messageSent(socket, String.valueOf(files));
+                        DstoreLogger.getInstance().messageSent(socket, String.valueOf(files));
                         out.println(files);
                     } else if (line.startsWith("REBALANCE ")) {
                         ArrayList<String> splitLine = new ArrayList<>(Arrays.asList(line.split(" ")));
@@ -165,15 +165,15 @@ public class Dstore {
 
                                 for (File file : Objects.requireNonNull(new File(fileFolder).listFiles())) {
                                     if (file.getName().equals(fileName)) {
-                                        datastoreLogger.messageSent(socket, "STORE " + fileName + " " + file.length());
+                                        DstoreLogger.getInstance().messageSent(socket, "STORE " + fileName + " " + file.length());
                                         datastoreOut.println("STORE " + fileName + " " + file.length());
 
                                         String datastoreLine;
                                         while ((datastoreLine = datastoreIn.readLine()) != null) {
-                                            datastoreLogger.messageReceived(socket, datastoreLine);
+                                            DstoreLogger.getInstance().messageReceived(socket, datastoreLine);
 
                                             if (datastoreLine.equals("ACK")) {
-                                                datastoreLogger.messageSent(socket, Arrays.toString(Files.readAllBytes(file.toPath())));
+                                                DstoreLogger.getInstance().messageSent(socket, Arrays.toString(Files.readAllBytes(file.toPath())));
                                                 datastoreSocket.getOutputStream().write(Files.readAllBytes(file.toPath()));
                                                 break;
                                             }
@@ -199,13 +199,13 @@ public class Dstore {
                                 }
                             }
                         }
-                        datastoreLogger.messageSent(socket,"REBALANCE COMPLETE");
+                        DstoreLogger.getInstance().messageSent(socket,"REBALANCE COMPLETE");
                         out.println("REBALANCE COMPLETE");
                         inRebalance = false;
                     }
                 }
             } catch (Exception e) {
-                datastoreLogger.log("Operation error (" + e + ")");
+                DstoreLogger.getInstance().log("Operation error (" + e + ")");
                 inRebalance = false;
             }
         }
@@ -218,7 +218,7 @@ public class Dstore {
                     throw new Exception("Cannot join controller");
                 }
             }
-            datastoreLogger.messageSent(socket, "JOIN " + datastorePort);
+            DstoreLogger.getInstance().messageSent(socket, "JOIN " + datastorePort);
             out.println("JOIN " + datastorePort);
         }
     }

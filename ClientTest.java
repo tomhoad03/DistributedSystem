@@ -31,7 +31,7 @@ class ClientTest {
                     testStore(downloadFile);
                 }
             }
-            
+
             // loading
             if (downloadFiles != null) {
                 for (File downloadFile : downloadFiles) {
